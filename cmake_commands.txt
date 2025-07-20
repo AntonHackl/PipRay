@@ -1,0 +1,6 @@
+# configure & generate
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+
+# compile everything that was generated
+cmake --build build --config Debug
+cmake --build build --config Debug --parallel
