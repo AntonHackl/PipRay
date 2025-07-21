@@ -1,0 +1,6 @@
+/mnt/c/Users/anton/Documents/Uni/Spatial Data Management/CDT/CDT/CMakeFiles/install/strip.dir
+/mnt/c/Users/anton/Documents/Uni/Spatial Data Management/CDT/CDT/CMakeFiles/install.dir
+/mnt/c/Users/anton/Documents/Uni/Spatial Data Management/CDT/CDT/CMakeFiles/list_install_components.dir
+/mnt/c/Users/anton/Documents/Uni/Spatial Data Management/CDT/CDT/CMakeFiles/rebuild_cache.dir
+/mnt/c/Users/anton/Documents/Uni/Spatial Data Management/CDT/CDT/CMakeFiles/edit_cache.dir
+/mnt/c/Users/anton/Documents/Uni/Spatial Data Management/CDT/CDT/CMakeFiles/install/local.dir

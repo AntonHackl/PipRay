@@ -1,0 +1,14 @@
+/usr/local/include/CDT.h
+/usr/local/include/CDT.hpp
+/usr/local/include/CDTUtils.h
+/usr/local/include/CDTUtils.hpp
+/usr/local/include/KDTree.h
+/usr/local/include/LocatorKDTree.h
+/usr/local/include/portable_nth_element.hpp
+/usr/local/include/predicates.h
+/usr/local/include/remove_at.hpp
+/usr/local/include/Triangulation.h
+/usr/local/include/Triangulation.hpp
+/usr/local/include/InitializeWithGrid.h
+/usr/local/include/VerifyTopology.h
+/usr/local/cmake/CDTConfig.cmake
