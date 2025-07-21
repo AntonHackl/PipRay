@@ -50,11 +50,14 @@ int main(int argc, char* argv[])
         }
     }
     
+    std::vector<std::vector<CDT::V2d<float>>> polygons;
+    std::vector<CDT::TriangleVec> triangulated_polygons;
+    
     if (!datasetPath.empty()) {
         std::cout << "=== Dataset Triangulation ===" << std::endl;
         std::cout << "Loading polygons from: " << datasetPath << std::endl;
         
-        auto polygons = readPolygonVerticesFromFile(datasetPath);
+        polygons = readPolygonVerticesFromFile(datasetPath);
         if (polygons.empty()) {
             std::cerr << "Error: No valid polygons found in dataset file." << std::endl;
             return 1;
@@ -62,7 +65,6 @@ int main(int argc, char* argv[])
         
         std::cout << "Found " << polygons.size() << " polygons in dataset" << std::endl;
         
-        std::vector<CDT::TriangleVec> triangulated_polygons;
         for (const auto& poly : polygons) {
             auto triangulated = triangulatePolygon(poly);
             triangulated_polygons.push_back(triangulated);
@@ -82,17 +84,54 @@ int main(int argc, char* argv[])
     OptixDeviceContext context = nullptr;
     OPTIX_CHECK(optixDeviceContextCreate(0, nullptr, &context));
 
-    std::vector<float3> vertices = {
-        {0.0f, 0.0f, 0.0f},
-        {0.5f, 1.0f, 0.0f},
-        {1.0f, 0.0f, 0.0f}
-    };
-    std::vector<uint3> indices = { {0,1,2} };
+    std::vector<float3> vertices;
+    std::vector<uint3> indices;
     
-    std::cout << "Triangle vertices:" << std::endl;
-    std::cout << "  V0: (" << vertices[0].x << ", " << vertices[0].y << ", " << vertices[0].z << ")" << std::endl;
-    std::cout << "  V1: (" << vertices[1].x << ", " << vertices[1].y << ", " << vertices[1].z << ")" << std::endl;
-    std::cout << "  V2: (" << vertices[2].x << ", " << vertices[2].y << ", " << vertices[2].z << ")" << std::endl;
+    if (!datasetPath.empty()) {
+        std::cout << "Converting dataset triangles to OptiX format..." << std::endl;
+        
+        size_t vertexOffset = 0;
+        for (size_t poly_idx = 0; poly_idx < triangulated_polygons.size(); ++poly_idx) {
+            const auto& triangles = triangulated_polygons[poly_idx];
+            const auto& polygon_vertices = polygons[poly_idx];
+            
+            for (const auto& vertex : polygon_vertices) {
+                vertices.push_back({vertex.x, vertex.y, 0.0f});
+            }
+            
+            for (const auto& tri : triangles) {
+                indices.push_back({
+                    static_cast<unsigned int>(vertexOffset + tri.vertices[0]),
+                    static_cast<unsigned int>(vertexOffset + tri.vertices[1]),
+                    static_cast<unsigned int>(vertexOffset + tri.vertices[2])
+                });
+            }
+            
+            vertexOffset += polygon_vertices.size();
+        }
+        
+        std::cout << "Dataset converted to " << vertices.size() << " vertices and " << indices.size() << " triangles" << std::endl;
+    } else {
+        // Use hardcoded triangle if no dataset provided
+        // This is just for testing
+        vertices = {
+            {0.0f, 0.0f, 0.0f},
+            {0.5f, 1.0f, 0.0f},
+            {1.0f, 0.0f, 0.0f}
+        };
+        indices = { {0,1,2} };
+    }
+    
+    std::cout << "Geometry loaded: " << vertices.size() << " vertices, " << indices.size() << " triangles" << std::endl;
+    
+    if (!datasetPath.empty()) {
+        std::cout << "Using dataset triangles for raytracing acceleration structure" << std::endl;
+    } else {
+        std::cout << "Triangle vertices:" << std::endl;
+        std::cout << "  V0: (" << vertices[0].x << ", " << vertices[0].y << ", " << vertices[0].z << ")" << std::endl;
+        std::cout << "  V1: (" << vertices[1].x << ", " << vertices[1].y << ", " << vertices[1].z << ")" << std::endl;
+        std::cout << "  V2: (" << vertices[2].x << ", " << vertices[2].y << ", " << vertices[2].z << ")" << std::endl;
+    }
 
     float3* d_vertices = nullptr;
     uint3*  d_indices  = nullptr;
@@ -268,7 +307,6 @@ int main(int argc, char* argv[])
         LaunchParams lp = {};
         lp.ray_gen.origin = testRays[i].origin;
         
-        // Normalize direction
         float3 dir = testRays[i].direction;
         float length = sqrtf(dir.x*dir.x + dir.y*dir.y + dir.z*dir.z);
         lp.ray_gen.direction = {dir.x/length, dir.y/length, dir.z/length};
