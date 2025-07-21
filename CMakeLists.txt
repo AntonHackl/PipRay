@@ -1,15 +1,19 @@
 cmake_minimum_required(VERSION 3.18)
+
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    set(CMAKE_TOOLCHAIN_FILE "C:/Users/anton/Documents/Uni/vcpkg/scripts/buildsystems/vcpkg.cmake")
+endif()
+
 project(OptiXSingleRay LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Add local cmake helpers
+add_definitions(-DNOMINMAX)
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
-# Find CUDA and OptiX via helper modules
 find_package(CUDA REQUIRED)
-# find_package(OptiX REQUIRED)
 include(cmake/FindOptiX.cmake)
 
 include(cmake/nvcuda_compile_module.cmake)
@@ -17,10 +21,10 @@ include(cmake/nvcuda_compile_module.cmake)
 set(SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 set(CUDA_SOURCES ${SRC_DIR}/raytracing.cu)
 set(CPP_SOURCE   ${SRC_DIR}/main.cpp)
+set(TRIANGULATE_SOURCE ${SRC_DIR}/triangulate_dataset.cpp)
+set(TRIANGULATION_LIB_SOURCE ${SRC_DIR}/triangulation.cpp)
 
-# Compile the CUDA file to PTX using helper function
 set(PTX_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR})
-# Before calling NVCUDA_COMPILE_MODULE define compilation parameters
 set(OPTIX_MODULE_EXTENSION ".ptx")
 set(OPTIX_PROGRAM_TARGET "--ptx")
 
@@ -32,12 +36,15 @@ NVCUDA_COMPILE_MODULE(
     NVCC_OPTIONS  "${OPTIX_PROGRAM_TARGET}" "--gpu-architecture=sm_75" "--relocatable-device-code=true" "--expt-relaxed-constexpr" "-I${OptiX_INCLUDE}"
 )
 
-add_executable(raytracer ${CPP_SOURCE})
+add_executable(raytracer ${CPP_SOURCE} ${TRIANGULATION_LIB_SOURCE})
 
-# Include directories
-target_include_directories(raytracer PRIVATE ${CUDA_INCLUDE_DIRS} ${OptiX_INCLUDE} ${SRC_DIR})
+target_include_directories(raytracer PRIVATE 
+    ${CUDA_INCLUDE_DIRS} 
+    ${OptiX_INCLUDE} 
+    ${SRC_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/CDT/CDT/include
+    C:/Users/anton/Documents/Uni/vcpkg/installed/x64-windows/include)
 
-# Provide PTX file path to application
 set(PTX_FILE "${PTX_OUTPUT_DIR}/raytracing${OPTIX_MODULE_EXTENSION}")
 add_custom_target(copy_ptx DEPENDS ${PTX_FILES})
 add_dependencies(raytracer copy_ptx)
@@ -48,3 +55,11 @@ add_dependencies(raytracer copy_ptx)
 target_link_libraries(raytracer PRIVATE ${CUDA_LIBRARIES} ${CUDA_CUDA_LIBRARY})
 
 set_target_properties(raytracer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin) 
+
+add_executable(triangulate_dataset ${TRIANGULATE_SOURCE} ${TRIANGULATION_LIB_SOURCE})
+
+target_include_directories(triangulate_dataset PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/CDT/CDT/include
+    C:/Users/anton/Documents/Uni/vcpkg/installed/x64-windows/include)
+
+set_target_properties(triangulate_dataset PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin) 

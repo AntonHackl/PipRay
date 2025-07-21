@@ -1,3 +1,8 @@
+// Prevent Windows.h from defining min/max macros that conflict with std::min/max
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
 #include <optix.h>
 #include <optix_stubs.h>
 #include <optix_function_table_definition.h>
@@ -5,7 +10,9 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
+#include <string>
 #include "common.h"
+#include "triangulation.h"
 
 constexpr const char* ptxPath = "C:/Users/anton/Documents/Uni/PipRay/build/raytracing.ptx";
 
@@ -23,8 +30,51 @@ static std::vector<char> readPTX(const char* filename)
 #define OPTIX_CHECK(call) do { OptixResult res = call; if(res!=OPTIX_SUCCESS){ std::cerr << "OptiX error " << res << " at " << __FILE__ << ":" << __LINE__ << std::endl; std::exit(EXIT_FAILURE);} } while(0)
 #define CUDA_CHECK(call) do { cudaError_t err = call; if(err!=cudaSuccess){ std::cerr << "CUDA error " << cudaGetErrorString(err) << " at " << __FILE__ << ":" << __LINE__ << std::endl; std::exit(EXIT_FAILURE);} } while(0)
 
-int main()
+int main(int argc, char* argv[])
 {
+    std::string datasetPath = "";
+    
+    if (argc > 1) {
+        for (int i = 1; i < argc; ++i) {
+            std::string arg = argv[i];
+            if (arg == "--dataset" && i + 1 < argc) {
+                datasetPath = argv[++i];
+            }
+            else if (arg == "--help" || arg == "-h") {
+                std::cout << "Usage: " << argv[0] << " [--dataset <path_to_wkt_file>]" << std::endl;
+                std::cout << "Options:" << std::endl;
+                std::cout << "  --dataset <path>   Path to WKT dataset file to triangulate" << std::endl;
+                std::cout << "  --help, -h         Show this help message" << std::endl;
+                return 0;
+            }
+        }
+    }
+    
+    if (!datasetPath.empty()) {
+        std::cout << "=== Dataset Triangulation ===" << std::endl;
+        std::cout << "Loading polygons from: " << datasetPath << std::endl;
+        
+        auto polygons = readPolygonVerticesFromFile(datasetPath);
+        if (polygons.empty()) {
+            std::cerr << "Error: No valid polygons found in dataset file." << std::endl;
+            return 1;
+        }
+        
+        std::cout << "Found " << polygons.size() << " polygons in dataset" << std::endl;
+        
+        std::vector<CDT::TriangleVec> triangulated_polygons;
+        for (const auto& poly : polygons) {
+            auto triangulated = triangulatePolygon(poly);
+            triangulated_polygons.push_back(triangulated);
+        }
+        
+        size_t totalTriangles = countTriangles(triangulated_polygons);
+        
+        std::cout << "Triangulation completed successfully!" << std::endl;
+        std::cout << "Total number of triangles: " << totalTriangles << std::endl;
+        std::cout << "=============================\n" << std::endl;
+    }
+
     std::cout << "OptiX single ray example" << std::endl;
 
     CUDA_CHECK(cudaFree(0));
@@ -91,9 +141,6 @@ int main()
     OptixModuleCompileOptions moduleCompileOptions = {};
     moduleCompileOptions.maxRegisterCount = OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT;
     moduleCompileOptions.optLevel = OPTIX_COMPILE_OPTIMIZATION_DEFAULT;
-    // Use the generic FULL debug level (present in all recent OptiX headers) instead of the
-    // older OPTIX_COMPILE_DEBUG_LEVEL_LINEINFO which may not be available depending on the
-    // OptiX SDK version installed.
     moduleCompileOptions.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_MODERATE;
 
     OptixPipelineCompileOptions pipelineCompileOptions = {};
@@ -217,7 +264,7 @@ int main()
         {{0.5f, 0.5f, -0.1f}, {0.0f, 0.0f, 0.1f}, "Three dimensional ray for triangles in x-y plane"}
     };
 
-    for (int i = 0; i < 7; ++i) {
+    for (int i = 0; i < sizeof(testRays) / sizeof(TestRay); ++i) {
         LaunchParams lp = {};
         lp.ray_gen.origin = testRays[i].origin;
         
