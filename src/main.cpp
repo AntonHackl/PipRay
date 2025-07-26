@@ -12,7 +12,7 @@
 #include <vector>
 #include <string>
 #include "common.h"
-#include "triangulation.h"
+#include "dataset_loader.h"
 
 constexpr const char* ptxPath = "C:/Users/anton/Documents/Uni/PipRay/build/raytracing.ptx";
 
@@ -50,97 +50,27 @@ int main(int argc, char* argv[])
         }
     }
     
-    std::vector<std::vector<CDT::V2d<float>>> polygons;
-    std::vector<CDT::TriangleVec> triangulated_polygons;
-    
-    if (!datasetPath.empty()) {
-        std::cout << "=== Dataset Triangulation ===" << std::endl;
-        std::cout << "Loading polygons from: " << datasetPath << std::endl;
-        
-        polygons = readPolygonVerticesFromFile(datasetPath);
-        if (polygons.empty()) {
-            std::cerr << "Error: No valid polygons found in dataset file." << std::endl;
-            return 1;
-        }
-        
-        std::cout << "Found " << polygons.size() << " polygons in dataset" << std::endl;
-        
-        for (const auto& poly : polygons) {
-            auto triangulated = triangulatePolygon(poly);
-            triangulated_polygons.push_back(triangulated);
-        }
-        
-        size_t totalTriangles = countTriangles(triangulated_polygons);
-        
-        std::cout << "Triangulation completed successfully!" << std::endl;
-        std::cout << "Total number of triangles: " << totalTriangles << std::endl;
-        std::cout << "=============================\n" << std::endl;
-    }
+    std::cout << "OptiX multiple rays example" << std::endl;
 
-    std::cout << "OptiX single ray example" << std::endl;
+    GeometryData geometry = loadDatasetGeometry(datasetPath);
+    if (geometry.vertices.empty()) {
+        std::cerr << "Error: Failed to load geometry." << std::endl;
+        return 1;
+    }
 
     CUDA_CHECK(cudaFree(0));
     OPTIX_CHECK(optixInit());
     OptixDeviceContext context = nullptr;
     OPTIX_CHECK(optixDeviceContextCreate(0, nullptr, &context));
 
-    std::vector<float3> vertices;
-    std::vector<uint3> indices;
-    
-    if (!datasetPath.empty()) {
-        std::cout << "Converting dataset triangles to OptiX format..." << std::endl;
-        
-        size_t vertexOffset = 0;
-        for (size_t poly_idx = 0; poly_idx < triangulated_polygons.size(); ++poly_idx) {
-            const auto& triangles = triangulated_polygons[poly_idx];
-            const auto& polygon_vertices = polygons[poly_idx];
-            
-            for (const auto& vertex : polygon_vertices) {
-                vertices.push_back({vertex.x, vertex.y, 0.0f});
-            }
-            
-            for (const auto& tri : triangles) {
-                indices.push_back({
-                    static_cast<unsigned int>(vertexOffset + tri.vertices[0]),
-                    static_cast<unsigned int>(vertexOffset + tri.vertices[1]),
-                    static_cast<unsigned int>(vertexOffset + tri.vertices[2])
-                });
-            }
-            
-            vertexOffset += polygon_vertices.size();
-        }
-        
-        std::cout << "Dataset converted to " << vertices.size() << " vertices and " << indices.size() << " triangles" << std::endl;
-    } else {
-        // Use hardcoded triangle if no dataset provided
-        // This is just for testing
-        vertices = {
-            {0.0f, 0.0f, 0.0f},
-            {0.5f, 1.0f, 0.0f},
-            {1.0f, 0.0f, 0.0f}
-        };
-        indices = { {0,1,2} };
-    }
-    
-    std::cout << "Geometry loaded: " << vertices.size() << " vertices, " << indices.size() << " triangles" << std::endl;
-    
-    if (!datasetPath.empty()) {
-        std::cout << "Using dataset triangles for raytracing acceleration structure" << std::endl;
-    } else {
-        std::cout << "Triangle vertices:" << std::endl;
-        std::cout << "  V0: (" << vertices[0].x << ", " << vertices[0].y << ", " << vertices[0].z << ")" << std::endl;
-        std::cout << "  V1: (" << vertices[1].x << ", " << vertices[1].y << ", " << vertices[1].z << ")" << std::endl;
-        std::cout << "  V2: (" << vertices[2].x << ", " << vertices[2].y << ", " << vertices[2].z << ")" << std::endl;
-    }
-
     float3* d_vertices = nullptr;
     uint3*  d_indices  = nullptr;
-    size_t vbytes = vertices.size()*sizeof(float3);
-    size_t ibytes = indices.size()*sizeof(uint3);
+    size_t vbytes = geometry.vertices.size()*sizeof(float3);
+    size_t ibytes = geometry.indices.size()*sizeof(uint3);
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_vertices),vbytes));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_indices),ibytes));
-    CUDA_CHECK(cudaMemcpy(d_vertices,vertices.data(),vbytes,cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_indices,indices.data(),ibytes,cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_vertices,geometry.vertices.data(),vbytes,cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_indices,geometry.indices.data(),ibytes,cudaMemcpyHostToDevice));
 
     CUdeviceptr d_vertices_ptr = reinterpret_cast<CUdeviceptr>(d_vertices);
     CUdeviceptr d_indices_ptr  = reinterpret_cast<CUdeviceptr>(d_indices);
@@ -148,11 +78,11 @@ int main(int argc, char* argv[])
     OptixBuildInput buildInput = {};
     buildInput.type = OPTIX_BUILD_INPUT_TYPE_TRIANGLES;
     buildInput.triangleArray.vertexBuffers = &d_vertices_ptr;
-    buildInput.triangleArray.numVertices = static_cast<unsigned int>(vertices.size());
+    buildInput.triangleArray.numVertices = static_cast<unsigned int>(geometry.vertices.size());
     buildInput.triangleArray.vertexFormat = OPTIX_VERTEX_FORMAT_FLOAT3;
     buildInput.triangleArray.vertexStrideInBytes = sizeof(float3);
     buildInput.triangleArray.indexBuffer = d_indices_ptr;
-    buildInput.triangleArray.numIndexTriplets = static_cast<unsigned int>(indices.size());
+    buildInput.triangleArray.numIndexTriplets = static_cast<unsigned int>(geometry.indices.size());
     buildInput.triangleArray.indexFormat = OPTIX_INDICES_FORMAT_UNSIGNED_INT3;
     buildInput.triangleArray.indexStrideInBytes = sizeof(uint3);
     unsigned int triangle_input_flags = OPTIX_GEOMETRY_FLAG_NONE;
@@ -185,7 +115,7 @@ int main(int argc, char* argv[])
     OptixPipelineCompileOptions pipelineCompileOptions = {};
     pipelineCompileOptions.usesMotionBlur        = false;
     pipelineCompileOptions.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
-    pipelineCompileOptions.numPayloadValues      = 2;
+    pipelineCompileOptions.numPayloadValues      = 3;
     pipelineCompileOptions.numAttributeValues    = 2;
     pipelineCompileOptions.exceptionFlags        = OPTIX_EXCEPTION_FLAG_NONE;
     pipelineCompileOptions.pipelineLaunchParamsVariableName = "params";
@@ -327,10 +257,15 @@ int main(int argc, char* argv[])
     RayResult* d_results = nullptr;
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_results), numRays * sizeof(RayResult)));
     
+    int* d_triangle_to_polygon = nullptr;
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_triangle_to_polygon), geometry.triangleToPolygon.size() * sizeof(int)));
+    CUDA_CHECK(cudaMemcpy(d_triangle_to_polygon, geometry.triangleToPolygon.data(), geometry.triangleToPolygon.size() * sizeof(int), cudaMemcpyHostToDevice));
+    
     LaunchParams lp = {};
     lp.handle = gasHandle;
     lp.ray_origins = d_ray_origins;
     lp.ray_directions = d_ray_directions;
+    lp.triangle_to_polygon = d_triangle_to_polygon;
     lp.num_rays = numRays;
     lp.result = d_results;
     
@@ -349,10 +284,13 @@ int main(int argc, char* argv[])
         std::cout << "Ray direction: (" << rayDirections[i].x << ", " << rayDirections[i].y << ", " << rayDirections[i].z << ")" << std::endl;
         
         if (h_results[i].hit) {
+            int polygonIndex = geometry.triangleToPolygon[h_results[i].triangle_index];
             std::cout << "Ray HIT the triangles!" << std::endl;
             std::cout << "  Distance: " << h_results[i].t << std::endl;
             std::cout << "  Hit point: (" << h_results[i].hit_point.x << ", " << h_results[i].hit_point.y << ", " << h_results[i].hit_point.z << ")" << std::endl;
             std::cout << "  Barycentric coordinates: (" << h_results[i].barycentrics.x << ", " << h_results[i].barycentrics.y << ")" << std::endl;
+            std::cout << "  Triangle index: " << h_results[i].triangle_index << std::endl;
+            std::cout << "  Polygon index: " << polygonIndex << std::endl;
         } else {
             std::cout << "Ray MISSED the triangles" << std::endl;
         }
@@ -361,6 +299,7 @@ int main(int argc, char* argv[])
     CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_results)));
     CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_ray_origins)));
     CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_ray_directions)));
+    CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_triangle_to_polygon)));
     CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_result)));
     CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_lp)));
     CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_rg)));

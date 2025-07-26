@@ -18,8 +18,9 @@ extern "C" __global__ void __raygen__rg()
     const float3 orig = params.ray_origins[ray_id];
     const float3 dir = params.ray_directions[ray_id];
 
-    unsigned int p0 = 0;  // hit flag (0 = miss, 1 = hit)
-    unsigned int p1 = __float_as_uint(0.0f);
+    unsigned int hitFlag = 0;
+    unsigned int distance = __float_as_uint(0.0f);
+    unsigned int triangleIndex = 0;
 
     optixTrace(
         params.handle,
@@ -33,14 +34,15 @@ extern "C" __global__ void __raygen__rg()
         /*SBT offset*/ 0,
         /*SBT stride*/ 1,
         /*missSBTIndex*/ 0,
-        /*payload*/ p0, p1);
+        /*payload*/ hitFlag, distance, triangleIndex);
 
     if (params.result) {
-        params.result[ray_id].hit = p0;
-        params.result[ray_id].t = __uint_as_float(p1);
-        
-        if (p0) {
-            float t = __uint_as_float(p1);
+        params.result[ray_id].hit = hitFlag;
+        params.result[ray_id].t = __uint_as_float(distance);
+        params.result[ray_id].triangle_index = static_cast<int>(triangleIndex);
+
+        if (hitFlag) {
+            float t = __uint_as_float(distance);
             params.result[ray_id].hit_point = make_float3(
                 orig.x + t * dir.x,
                 orig.y + t * dir.y,
@@ -56,15 +58,18 @@ extern "C" __global__ void __miss__ms()
 {
     optixSetPayload_0(0); // hit = 0 (miss)
     optixSetPayload_1(__float_as_uint(0.0f)); // t = 0.0f
+    optixSetPayload_2(0); // triangle index = 0
 }
 
 extern "C" __global__ void __closesthit__ch()
 {
     const float2 bc = optixGetTriangleBarycentrics();
     const float t = optixGetRayTmax();
+    const unsigned int triangleIndex = optixGetPrimitiveIndex();
     
     optixSetPayload_0(1); // hit = 1 (hit)
     optixSetPayload_1(__float_as_uint(t)); // distance to hit point
+    optixSetPayload_2(triangleIndex); // triangle index
     
     if (params.result) {
         params.result->barycentrics = bc;

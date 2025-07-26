@@ -17,7 +17,8 @@ struct RayResult {
     int hit;           
     float t;            
     float3 hit_point;  
-    float2 barycentrics; 
+    float2 barycentrics;
+    int triangle_index;
 };
 
 struct LaunchParams {
@@ -28,5 +29,6 @@ struct LaunchParams {
 
     float3* ray_origins;
     float3* ray_directions;
+    int* triangle_to_polygon;
     int num_rays;
 };

@@ -10,10 +10,6 @@
 #include <string>
 #include <vector>
 
-#include <boost/geometry.hpp>
-#include <boost/geometry/geometries/polygon.hpp>
-#include <boost/geometry/io/wkt/wkt.hpp>
-
 #include "triangulation.h"
 
 using namespace std;
@@ -80,9 +76,15 @@ int main(int argc, char* argv[])
     }
     testFile.close();
 
-    vector<vector<CDT::V2d<float> > > polygons =
-        readPolygonVerticesFromFile(inputFilepath);
-
+    // Read polygons from the input WKT file using triangulation library
+    vector<vector<CDT::V2d<float>>> polygons;
+    try {
+        polygons = readPolygonVerticesFromFile(inputFilepath);
+    } catch (const exception& e) {
+        cerr << "Error reading input file: " << e.what() << endl;
+        return 1;
+    }
+    
     if(polygons.empty())
     {
         cerr << "Error: No valid polygons found in input file '"
@@ -90,11 +92,16 @@ int main(int argc, char* argv[])
         return 1;
     }
 
+    // Triangulate all polygons using the triangulation library
     vector<CDT::TriangleVec> triangulated_polygons;
-    for(const auto& poly : polygons)
-    {
-        auto triangulated = triangulatePolygon(poly);
-        triangulated_polygons.push_back(triangulated);
+    for (const auto& polygon : polygons) {
+        try {
+            CDT::TriangleVec triangles = triangulatePolygon(polygon);
+            triangulated_polygons.push_back(triangles);
+        } catch (const exception& e) {
+            cerr << "Error triangulating polygon: " << e.what() << endl;
+            return 1;
+        }
     }
 
     // cout << "Number of polygons: " << polygons.size() << endl;
@@ -114,7 +121,7 @@ int main(int argc, char* argv[])
     {
         const auto& triangles = triangulated_polygons[poly_idx];
         const auto& vertices = polygons[poly_idx];
-        wkt_out << "# Triangles for polygon group " << poly_idx << std::endl;
+        wkt_out << "# Triangles for polygon " << poly_idx << std::endl;
         for(const auto& tri : triangles)
         {
             BoostPolygon poly;
