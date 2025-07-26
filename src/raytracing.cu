@@ -7,8 +7,16 @@ extern "C" __constant__ LaunchParams params;
 
 extern "C" __global__ void __raygen__rg()
 {
-    const float3 orig = params.ray_gen.origin;
-    const float3 dir  = params.ray_gen.direction;
+    const uint3 idx = optixGetLaunchIndex();
+    const uint3 dim = optixGetLaunchDimensions();
+    const int ray_id = idx.x + idx.y * dim.x + idx.z * dim.x * dim.y;
+    
+    if (ray_id >= params.num_rays) {
+        return;
+    }
+    
+    const float3 orig = params.ray_origins[ray_id];
+    const float3 dir = params.ray_directions[ray_id];
 
     unsigned int p0 = 0;  // hit flag (0 = miss, 1 = hit)
     unsigned int p1 = __float_as_uint(0.0f);
@@ -28,19 +36,18 @@ extern "C" __global__ void __raygen__rg()
         /*payload*/ p0, p1);
 
     if (params.result) {
-        params.result->hit = p0;
-        params.result->t = __uint_as_float(p1);
+        params.result[ray_id].hit = p0;
+        params.result[ray_id].t = __uint_as_float(p1);
         
-        // Calculate hit point if we hit something
         if (p0) {
             float t = __uint_as_float(p1);
-            params.result->hit_point = make_float3(
+            params.result[ray_id].hit_point = make_float3(
                 orig.x + t * dir.x,
                 orig.y + t * dir.y,
                 orig.z + t * dir.z
             );
         } else {
-            params.result->hit_point = make_float3(0.0f, 0.0f, 0.0f);
+            params.result[ray_id].hit_point = make_float3(0.0f, 0.0f, 0.0f);
         }
     }
 }

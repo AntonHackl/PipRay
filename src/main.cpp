@@ -296,46 +296,71 @@ int main(int argc, char* argv[])
     TestRay testRays[] = {
         {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, "Along X-axis"},
         {{0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, "Along Y-axis"}, 
-        {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, "Along Z-axis"},
+        {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -1.0f}, "Along Z-axis"},
         {{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, "Diagonal (1,1,1)"},
         {{1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, "From (1,1,1) to (2,2,2) direction"},
         {{2.5f, 2.5f, 1.0f}, {0.0f, 0.0f, 1.0f}, "From triangle center in Z direction"},
         {{0.5f, 0.5f, -0.1f}, {0.0f, 0.0f, 0.1f}, "Three dimensional ray for triangles in x-y plane"}
     };
 
-    for (int i = 0; i < sizeof(testRays) / sizeof(TestRay); ++i) {
-        LaunchParams lp = {};
-        lp.ray_gen.origin = testRays[i].origin;
+    const int numRays = sizeof(testRays) / sizeof(TestRay);
+    
+    std::vector<float3> rayOrigins(numRays);
+    std::vector<float3> rayDirections(numRays);
+    
+    for (int i = 0; i < numRays; ++i) {
+        rayOrigins[i] = testRays[i].origin;
         
         float3 dir = testRays[i].direction;
         float length = sqrtf(dir.x*dir.x + dir.y*dir.y + dir.z*dir.z);
-        lp.ray_gen.direction = {dir.x/length, dir.y/length, dir.z/length};
-        lp.handle = gasHandle;
-        lp.result = reinterpret_cast<RayResult*>(d_result);
-
-        h_result = {};
-        CUDA_CHECK(cudaMemcpy((void*)d_result, &h_result, sizeof(RayResult), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy((void*)d_lp,&lp,sizeof(LaunchParams),cudaMemcpyHostToDevice));
-
+        rayDirections[i] = {dir.x/length, dir.y/length, dir.z/length};
+    }
+    
+    float3* d_ray_origins = nullptr;
+    float3* d_ray_directions = nullptr;
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_ray_origins), numRays * sizeof(float3)));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_ray_directions), numRays * sizeof(float3)));
+    CUDA_CHECK(cudaMemcpy(d_ray_origins, rayOrigins.data(), numRays * sizeof(float3), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_ray_directions, rayDirections.data(), numRays * sizeof(float3), cudaMemcpyHostToDevice));
+    
+    std::vector<RayResult> h_results(numRays);
+    RayResult* d_results = nullptr;
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_results), numRays * sizeof(RayResult)));
+    
+    LaunchParams lp = {};
+    lp.handle = gasHandle;
+    lp.ray_origins = d_ray_origins;
+    lp.ray_directions = d_ray_directions;
+    lp.num_rays = numRays;
+    lp.result = d_results;
+    
+    CUDA_CHECK(cudaMemcpy((void*)d_lp, &lp, sizeof(LaunchParams), cudaMemcpyHostToDevice));
+    
+    std::cout << "\n=== Tracing " << numRays << " rays in a single GPU launch ===" << std::endl;
+    
+    OPTIX_CHECK(optixLaunch(pipeline, 0, d_lp, sizeof(LaunchParams), &sbt, numRays, 1, 1));
+    CUDA_CHECK(cudaDeviceSynchronize());
+    
+    CUDA_CHECK(cudaMemcpy(h_results.data(), d_results, numRays * sizeof(RayResult), cudaMemcpyDeviceToHost));
+    
+    for (int i = 0; i < numRays; ++i) {
         std::cout << "\n=== Test Ray " << (i+1) << ": " << testRays[i].description << " ===" << std::endl;
-        std::cout << "Ray origin: (" << lp.ray_gen.origin.x << ", " << lp.ray_gen.origin.y << ", " << lp.ray_gen.origin.z << ")" << std::endl;
-        std::cout << "Ray direction: (" << lp.ray_gen.direction.x << ", " << lp.ray_gen.direction.y << ", " << lp.ray_gen.direction.z << ")" << std::endl;
+        std::cout << "Ray origin: (" << rayOrigins[i].x << ", " << rayOrigins[i].y << ", " << rayOrigins[i].z << ")" << std::endl;
+        std::cout << "Ray direction: (" << rayDirections[i].x << ", " << rayDirections[i].y << ", " << rayDirections[i].z << ")" << std::endl;
         
-        OPTIX_CHECK(optixLaunch(pipeline,0,d_lp,sizeof(LaunchParams),&sbt,1,1,1));
-        CUDA_CHECK(cudaDeviceSynchronize());
-
-        CUDA_CHECK(cudaMemcpy(&h_result, (void*)d_result, sizeof(RayResult), cudaMemcpyDeviceToHost));
-
-        if (h_result.hit) {
-            std::cout << "Ray HIT the triangle!" << std::endl;
-            std::cout << "  Distance: " << h_result.t << std::endl;
-            std::cout << "  Hit point: (" << h_result.hit_point.x << ", " << h_result.hit_point.y << ", " << h_result.hit_point.z << ")" << std::endl;
-            std::cout << "  Barycentric coordinates: (" << h_result.barycentrics.x << ", " << h_result.barycentrics.y << ")" << std::endl;
+        if (h_results[i].hit) {
+            std::cout << "Ray HIT the triangles!" << std::endl;
+            std::cout << "  Distance: " << h_results[i].t << std::endl;
+            std::cout << "  Hit point: (" << h_results[i].hit_point.x << ", " << h_results[i].hit_point.y << ", " << h_results[i].hit_point.z << ")" << std::endl;
+            std::cout << "  Barycentric coordinates: (" << h_results[i].barycentrics.x << ", " << h_results[i].barycentrics.y << ")" << std::endl;
         } else {
-            std::cout << "Ray MISSED the triangle" << std::endl;
+            std::cout << "Ray MISSED the triangles" << std::endl;
         }
     }
 
+    CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_results)));
+    CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_ray_origins)));
+    CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_ray_directions)));
     CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_result)));
     CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_lp)));
     CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_rg)));

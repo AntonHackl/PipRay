@@ -14,15 +14,19 @@ struct HitGroupData {
 };
 
 struct RayResult {
-    int hit;           // 1 if ray hit something, 0 if miss
-    float t;           // distance to hit point
-    float3 hit_point;  // world coordinates of hit point
-    float2 barycentrics; // barycentric coordinates for triangle hit
+    int hit;           
+    float t;            
+    float3 hit_point;  
+    float2 barycentrics; 
 };
 
 struct LaunchParams {
     RayGenData ray_gen;
     HitGroupData hit_group;
     OptixTraversableHandle handle;
-    RayResult* result; // Pointer to result buffer on device
-}; 
+    RayResult* result;
+
+    float3* ray_origins;
+    float3* ray_directions;
+    int num_rays;
+};
