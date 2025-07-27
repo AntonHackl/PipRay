@@ -28,7 +28,6 @@ struct LaunchParams {
     RayResult* result;
 
     float3* ray_origins;
-    float3* ray_directions;
     int* triangle_to_polygon;
     int num_rays;
 };

@@ -11,6 +11,7 @@
 #include <fstream>
 #include <vector>
 #include <string>
+#include <chrono>
 #include "common.h"
 #include "dataset_loader.h"
 
@@ -33,6 +34,7 @@ static std::vector<char> readPTX(const char* filename)
 int main(int argc, char* argv[])
 {
     std::string datasetPath = "";
+    std::string pointDatasetPath = "";
     
     if (argc > 1) {
         for (int i = 1; i < argc; ++i) {
@@ -40,10 +42,14 @@ int main(int argc, char* argv[])
             if (arg == "--dataset" && i + 1 < argc) {
                 datasetPath = argv[++i];
             }
+            else if (arg == "--points" && i + 1 < argc) {
+                pointDatasetPath = argv[++i];
+            }
             else if (arg == "--help" || arg == "-h") {
-                std::cout << "Usage: " << argv[0] << " [--dataset <path_to_wkt_file>]" << std::endl;
+                std::cout << "Usage: " << argv[0] << " [--dataset <path_to_wkt_file>] [--points <path_to_point_wkt_file>]" << std::endl;
                 std::cout << "Options:" << std::endl;
                 std::cout << "  --dataset <path>   Path to WKT dataset file to triangulate" << std::endl;
+                std::cout << "  --points <path>    Path to WKT file containing POINT geometries for ray origins" << std::endl;
                 std::cout << "  --help, -h         Show this help message" << std::endl;
                 return 0;
             }
@@ -55,6 +61,12 @@ int main(int argc, char* argv[])
     GeometryData geometry = loadDatasetGeometry(datasetPath);
     if (geometry.vertices.empty()) {
         std::cerr << "Error: Failed to load geometry." << std::endl;
+        return 1;
+    }
+
+    PointData pointData = loadPointDataset(pointDatasetPath);
+    if (pointData.positions.empty()) {
+        std::cerr << "Error: Failed to load point dataset." << std::endl;
         return 1;
     }
 
@@ -177,6 +189,8 @@ int main(int argc, char* argv[])
     OptixPipeline pipeline = nullptr;
     OPTIX_CHECK(optixPipelineCreate(context,&pipelineCompileOptions,&linkOptions,pgs.data(),pgs.size(),nullptr,nullptr,&pipeline));
 
+    auto optix_start = std::chrono::high_resolution_clock::now();
+
     struct __align__(OPTIX_SBT_RECORD_ALIGNMENT) RaygenRecord { char header[OPTIX_SBT_RECORD_HEADER_SIZE]; RayGenData data; };
     struct __align__(OPTIX_SBT_RECORD_ALIGNMENT) MissRecord    { char header[OPTIX_SBT_RECORD_HEADER_SIZE]; HitGroupData data; };
     struct __align__(OPTIX_SBT_RECORD_ALIGNMENT) HitRecord     { char header[OPTIX_SBT_RECORD_HEADER_SIZE]; HitGroupData data; };
@@ -217,41 +231,13 @@ int main(int argc, char* argv[])
     CUdeviceptr d_lp;
     CUDA_CHECK(cudaMalloc((void**)&d_lp,sizeof(LaunchParams)));
 
-    struct TestRay {
-        float3 origin;
-        float3 direction;
-        const char* description;
-    };
-
-    TestRay testRays[] = {
-        {{0.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, "Along X-axis"},
-        {{0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, "Along Y-axis"}, 
-        {{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -1.0f}, "Along Z-axis"},
-        {{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, "Diagonal (1,1,1)"},
-        {{1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, "From (1,1,1) to (2,2,2) direction"},
-        {{2.5f, 2.5f, 1.0f}, {0.0f, 0.0f, 1.0f}, "From triangle center in Z direction"},
-        {{0.5f, 0.5f, -0.1f}, {0.0f, 0.0f, 0.1f}, "Three dimensional ray for triangles in x-y plane"}
-    };
-
-    const int numRays = sizeof(testRays) / sizeof(TestRay);
+    const int numRays = static_cast<int>(pointData.numPoints);
     
-    std::vector<float3> rayOrigins(numRays);
-    std::vector<float3> rayDirections(numRays);
-    
-    for (int i = 0; i < numRays; ++i) {
-        rayOrigins[i] = testRays[i].origin;
-        
-        float3 dir = testRays[i].direction;
-        float length = sqrtf(dir.x*dir.x + dir.y*dir.y + dir.z*dir.z);
-        rayDirections[i] = {dir.x/length, dir.y/length, dir.z/length};
-    }
+    std::vector<float3> rayOrigins = pointData.positions;
     
     float3* d_ray_origins = nullptr;
-    float3* d_ray_directions = nullptr;
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_ray_origins), numRays * sizeof(float3)));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_ray_directions), numRays * sizeof(float3)));
     CUDA_CHECK(cudaMemcpy(d_ray_origins, rayOrigins.data(), numRays * sizeof(float3), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_ray_directions, rayDirections.data(), numRays * sizeof(float3), cudaMemcpyHostToDevice));
     
     std::vector<RayResult> h_results(numRays);
     RayResult* d_results = nullptr;
@@ -264,7 +250,6 @@ int main(int argc, char* argv[])
     LaunchParams lp = {};
     lp.handle = gasHandle;
     lp.ray_origins = d_ray_origins;
-    lp.ray_directions = d_ray_directions;
     lp.triangle_to_polygon = d_triangle_to_polygon;
     lp.num_rays = numRays;
     lp.result = d_results;
@@ -277,28 +262,42 @@ int main(int argc, char* argv[])
     CUDA_CHECK(cudaDeviceSynchronize());
     
     CUDA_CHECK(cudaMemcpy(h_results.data(), d_results, numRays * sizeof(RayResult), cudaMemcpyDeviceToHost));
-    
-    for (int i = 0; i < numRays; ++i) {
-        std::cout << "\n=== Test Ray " << (i+1) << ": " << testRays[i].description << " ===" << std::endl;
-        std::cout << "Ray origin: (" << rayOrigins[i].x << ", " << rayOrigins[i].y << ", " << rayOrigins[i].z << ")" << std::endl;
-        std::cout << "Ray direction: (" << rayDirections[i].x << ", " << rayDirections[i].y << ", " << rayDirections[i].z << ")" << std::endl;
-        
-        if (h_results[i].hit) {
-            int polygonIndex = geometry.triangleToPolygon[h_results[i].triangle_index];
-            std::cout << "Ray HIT the triangles!" << std::endl;
-            std::cout << "  Distance: " << h_results[i].t << std::endl;
-            std::cout << "  Hit point: (" << h_results[i].hit_point.x << ", " << h_results[i].hit_point.y << ", " << h_results[i].hit_point.z << ")" << std::endl;
-            std::cout << "  Barycentric coordinates: (" << h_results[i].barycentrics.x << ", " << h_results[i].barycentrics.y << ")" << std::endl;
-            std::cout << "  Triangle index: " << h_results[i].triangle_index << std::endl;
-            std::cout << "  Polygon index: " << polygonIndex << std::endl;
-        } else {
-            std::cout << "Ray MISSED the triangles" << std::endl;
+
+    auto optix_end = std::chrono::high_resolution_clock::now();
+
+    if (numRays <= 100) {
+        std::cout << "\n=== Ray Results ===" << std::endl;
+        for (int i = 0; i < numRays; ++i) {
+            std::cout << "\n=== Ray " << (i+1) << " ===" << std::endl;
+            std::cout << "Ray origin: (" << rayOrigins[i].x << ", " << rayOrigins[i].y << ", " << rayOrigins[i].z << ")" << std::endl;
+            
+            if (h_results[i].hit) {
+                int polygonIndex = geometry.triangleToPolygon[h_results[i].triangle_index];
+                std::cout << "Ray HIT the triangles!" << std::endl;
+                std::cout << "  Distance: " << h_results[i].t << std::endl;
+                std::cout << "  Hit point: (" << h_results[i].hit_point.x << ", " << h_results[i].hit_point.y << ", " << h_results[i].hit_point.z << ")" << std::endl;
+                std::cout << "  Barycentric coordinates: (" << h_results[i].barycentrics.x << ", " << h_results[i].barycentrics.y << ")" << std::endl;
+                std::cout << "  Triangle index: " << h_results[i].triangle_index << std::endl;
+                std::cout << "  Polygon index: " << polygonIndex << std::endl;
+            } else {
+                std::cout << "Ray MISSED the triangles" << std::endl;
+            }
         }
+    } else {
+        std::cout << "\n=== Ray tracing completed for " << numRays << " rays ===" << std::endl;
+        std::cout << "Results are not displayed due to large number of rays." << std::endl;
     }
+
+    // Calculate and display performance metrics
+    auto optix_duration = std::chrono::duration_cast<std::chrono::microseconds>(optix_end - optix_start);
+    
+    std::cout << "\n=== Performance Summary ===" << std::endl;
+    std::cout << "Ray tracing execution took: " << optix_duration.count() << " microseconds (" << (double)optix_duration.count() / 1000.0 << " ms)" << std::endl;
+    std::cout << "Number of rays processed: " << numRays << std::endl;
+    std::cout << "Average time per ray: " << (double)optix_duration.count() / numRays << " microseconds" << std::endl;
 
     CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_results)));
     CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_ray_origins)));
-    CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_ray_directions)));
     CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_triangle_to_polygon)));
     CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_result)));
     CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_lp)));

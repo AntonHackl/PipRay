@@ -16,7 +16,7 @@ extern "C" __global__ void __raygen__rg()
     }
     
     const float3 orig = params.ray_origins[ray_id];
-    const float3 dir = params.ray_directions[ray_id];
+    const float3 dir = make_float3(0.0f, 0.0f, 1.0f);
 
     unsigned int hitFlag = 0;
     unsigned int distance = __float_as_uint(0.0f);

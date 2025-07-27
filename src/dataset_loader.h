@@ -12,4 +12,10 @@ struct GeometryData {
     size_t totalTriangles;
 };
 
-GeometryData loadDatasetGeometry(const std::string& datasetPath); 
+struct PointData {
+    std::vector<float3> positions;  // Ray origins (x, y, -1)
+    size_t numPoints;
+};
+
+GeometryData loadDatasetGeometry(const std::string& datasetPath);
+PointData loadPointDataset(const std::string& pointDatasetPath); 

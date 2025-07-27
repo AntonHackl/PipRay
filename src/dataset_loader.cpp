@@ -83,4 +83,74 @@ GeometryData loadDatasetGeometry(const std::string& datasetPath) {
     std::cout << "Geometry loaded: " << geometry.vertices.size() << " vertices, " << geometry.indices.size() << " triangles" << std::endl;
     
     return geometry;
+}
+
+PointData loadPointDataset(const std::string& pointDatasetPath) {
+    PointData pointData;
+    
+    if (pointDatasetPath.empty()) {
+        std::cout << "No point dataset provided, using default test points" << std::endl;
+        // Default test points if no dataset provided
+        pointData.positions = {
+            {0.0f, 0.0f, -1.0f},
+            {0.5f, 0.5f, -1.0f},
+            {1.0f, 1.0f, -1.0f}
+        };
+        pointData.numPoints = 3;
+        return pointData;
+    }
+    
+    std::cout << "=== Loading Point Dataset ===" << std::endl;
+    std::cout << "Loading points from: " << pointDatasetPath << std::endl;
+    
+    std::ifstream file(pointDatasetPath);
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open point dataset file: " << pointDatasetPath << std::endl;
+        return pointData;
+    }
+    
+    std::string line;
+    int lineNum = 0;
+    while (std::getline(file, line)) {
+        lineNum++;
+        // Trim whitespace
+        line.erase(0, line.find_first_not_of(" \t\r\n"));
+        line.erase(line.find_last_not_of(" \t\r\n") + 1);
+        
+        // Skip empty lines and comments
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+        
+        // Look for POINT entries
+        if (line.find("POINT") != std::string::npos) {
+            try {
+                // Parse the WKT POINT format: POINT(x y)
+                size_t start = line.find('(');
+                size_t end = line.find(')');
+                if (start != std::string::npos && end != std::string::npos) {
+                    std::string coords = line.substr(start + 1, end - start - 1);
+                    
+                    // Split by space to get x and y coordinates
+                    size_t spacePos = coords.find(' ');
+                    if (spacePos != std::string::npos) {
+                        float x = std::stof(coords.substr(0, spacePos));
+                        float y = std::stof(coords.substr(spacePos + 1));
+                        
+                        // Create ray origin at (x, y, -1)
+                        pointData.positions.push_back({x, y, -1.0f});
+                    }
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Warning: Could not parse point on line " << lineNum << ": " << e.what() << std::endl;
+                continue;
+            }
+        }
+    }
+    
+    pointData.numPoints = pointData.positions.size();
+    std::cout << "Loaded " << pointData.numPoints << " points from dataset" << std::endl;
+    std::cout << "=============================\n" << std::endl;
+    
+    return pointData;
 } 
