@@ -1,0 +1,40 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch OptiX Raytracer",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug/raytracer.exe",
+            "args": [
+                "--dataset", "${workspaceFolder}/dtl_cnty.wkt",
+                "--points", "${workspaceFolder}/dtl_cnty_points.wkt"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "CMake: build"
+        },
+        {
+            "name": "Attach to Process",
+            "type": "cppvsdbg",
+            "request": "attach",
+            "processId": "${command:pickProcess}"
+        },
+        {
+            "name": "Generate Random Points",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/generate_random_points.py",
+            "args": [
+                "${workspaceFolder}/dtl_cnty.wkt",
+                "200000",
+                "--output",
+                "dtl_cnty_points.wkt"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
