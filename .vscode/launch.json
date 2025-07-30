@@ -30,6 +30,8 @@
             "args": [
                 "${workspaceFolder}/dtl_cnty.wkt",
                 "200000",
+                "--runs",
+                "10",
                 "--output",
                 "${workspaceFolder}/dtl_cnty_points.wkt"
             ],

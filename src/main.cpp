@@ -14,6 +14,7 @@
 #include <chrono>
 #include "common.h"
 #include "dataset_loader.h"
+#include "timer.h"
 
 constexpr const char* ptxPath = "C:/Users/anton/Documents/Uni/PipRay/build/raytracing.ptx";
 
@@ -33,8 +34,12 @@ static std::vector<char> readPTX(const char* filename)
 
 int main(int argc, char* argv[])
 {
+    PerformanceTimer timer;
+    timer.start("Data Reading");
+    
     std::string datasetPath = "";
     std::string pointDatasetPath = "";
+    int numberOfRuns = 1;
     
     if (argc > 1) {
         for (int i = 1; i < argc; ++i) {
@@ -44,6 +49,9 @@ int main(int argc, char* argv[])
             }
             else if (arg == "--points" && i + 1 < argc) {
                 pointDatasetPath = argv[++i];
+            }
+            else if (arg == "--runs" && i + 1 < argc) {
+                numberOfRuns = std::atoi(argv[++i]);
             }
             else if (arg == "--help" || arg == "-h") {
                 std::cout << "Usage: " << argv[0] << " [--dataset <path_to_wkt_file>] [--points <path_to_point_wkt_file>]" << std::endl;
@@ -69,11 +77,15 @@ int main(int argc, char* argv[])
         std::cerr << "Error: Failed to load point dataset." << std::endl;
         return 1;
     }
-
+    
+    timer.next("Application Creation");
+    
     CUDA_CHECK(cudaFree(0));
     OPTIX_CHECK(optixInit());
     OptixDeviceContext context = nullptr;
     OPTIX_CHECK(optixDeviceContextCreate(0, nullptr, &context));
+    
+    timer.next("Initialization");
 
     float3* d_vertices = nullptr;
     uint3*  d_indices  = nullptr;
@@ -112,9 +124,13 @@ int main(int argc, char* argv[])
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_tempBuffer),gasSizes.tempSizeInBytes));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_gasOutput),gasSizes.outputSizeInBytes));
 
+    timer.next("Build Index");
+    
     OptixTraversableHandle gasHandle = 0;
     OPTIX_CHECK(optixAccelBuild(context,0,&accelOptions,&buildInput,1,d_tempBuffer,gasSizes.tempSizeInBytes,d_gasOutput,gasSizes.outputSizeInBytes,&gasHandle,nullptr,0));
     CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_tempBuffer)));
+    
+    timer.next("Module and Pipeline Setup");
 
     std::vector<char> ptxData = readPTX(ptxPath);
     std::cout << "PTX file loaded successfully, size: " << ptxData.size() << " bytes" << std::endl;
@@ -245,25 +261,60 @@ int main(int argc, char* argv[])
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_triangle_to_polygon), geometry.triangleToPolygon.size() * sizeof(int)));
     CUDA_CHECK(cudaMemcpy(d_triangle_to_polygon, geometry.triangleToPolygon.data(), geometry.triangleToPolygon.size() * sizeof(int), cudaMemcpyHostToDevice));
     
-    auto optix_start = std::chrono::high_resolution_clock::now();
-    
-    LaunchParams lp = {};
-    lp.handle = gasHandle;
-    lp.ray_origins = d_ray_origins;
-    lp.triangle_to_polygon = d_triangle_to_polygon;
-    lp.num_rays = numRays;
-    lp.result = d_results;
-    
-    CUDA_CHECK(cudaMemcpy((void*)d_lp, &lp, sizeof(LaunchParams), cudaMemcpyHostToDevice));
-    
-    std::cout << "\n=== Tracing " << numRays << " rays in a single GPU launch ===" << std::endl;
-    
-    OPTIX_CHECK(optixLaunch(pipeline, 0, d_lp, sizeof(LaunchParams), &sbt, numRays, 1, 1));
-    CUDA_CHECK(cudaDeviceSynchronize());
-    
-    CUDA_CHECK(cudaMemcpy(h_results.data(), d_results, numRays * sizeof(RayResult), cudaMemcpyDeviceToHost));
+    // Handle multiple runs for performance testing
+    if (numberOfRuns > 1) {
+        std::cout << "\n=== Running " << numberOfRuns << " iterations for performance measurement ===" << std::endl;
+        
+        // Perform multiple runs for timing
+        for (int run = 0; run < numberOfRuns; ++run) {
+            std::cout << "Run " << (run + 1) << "/" << numberOfRuns << std::endl;
+            
+            if (run == 0) {
+                timer.startRun("Query");
+            } else {
+                timer.nextRun("Query");
+            }
+            
+            LaunchParams lp = {};
+            lp.handle = gasHandle;
+            lp.ray_origins = d_ray_origins;
+            lp.triangle_to_polygon = d_triangle_to_polygon;
+            lp.num_rays = numRays;
+            lp.result = d_results;
+            
+            CUDA_CHECK(cudaMemcpy((void*)d_lp, &lp, sizeof(LaunchParams), cudaMemcpyHostToDevice));
+            
+            OPTIX_CHECK(optixLaunch(pipeline, 0, d_lp, sizeof(LaunchParams), &sbt, numRays, 1, 1));
+            CUDA_CHECK(cudaDeviceSynchronize());
+            
+            timer.finishRun();
+        }
+        
+        // Copy results from last run for output
+        CUDA_CHECK(cudaMemcpy(h_results.data(), d_results, numRays * sizeof(RayResult), cudaMemcpyDeviceToHost));
+        
+        timer.next("Output");
+    } else {
+        timer.next("Query");
+        
+        LaunchParams lp = {};
+        lp.handle = gasHandle;
+        lp.ray_origins = d_ray_origins;
+        lp.triangle_to_polygon = d_triangle_to_polygon;
+        lp.num_rays = numRays;
+        lp.result = d_results;
+        
+        CUDA_CHECK(cudaMemcpy((void*)d_lp, &lp, sizeof(LaunchParams), cudaMemcpyHostToDevice));
+        
+        std::cout << "\n=== Tracing " << numRays << " rays in a single GPU launch ===" << std::endl;
+        
+        OPTIX_CHECK(optixLaunch(pipeline, 0, d_lp, sizeof(LaunchParams), &sbt, numRays, 1, 1));
+        CUDA_CHECK(cudaDeviceSynchronize());
+        
+        CUDA_CHECK(cudaMemcpy(h_results.data(), d_results, numRays * sizeof(RayResult), cudaMemcpyDeviceToHost));
 
-    auto optix_end = std::chrono::high_resolution_clock::now();
+        timer.next("Output");
+    }
 
     if (numRays <= 100) {
         std::cout << "\n=== Ray Results ===" << std::endl;
@@ -288,15 +339,7 @@ int main(int argc, char* argv[])
         std::cout << "Results are not displayed due to large number of rays." << std::endl;
     }
 
-    // Calculate and display performance metrics
-    auto optix_duration = std::chrono::duration_cast<std::chrono::microseconds>(optix_end - optix_start);
-    
-    std::cout << "\n=== Performance Summary ===" << std::endl;
-    std::cout << "Ray tracing execution took: " << optix_duration.count() << " microseconds (" << (double)optix_duration.count() / 1000.0 << " ms)" << std::endl;
-    std::cout << "Number of rays processed: " << numRays << std::endl;
-    std::cout << "Average time per ray: " << (double)optix_duration.count() / numRays << " microseconds" << std::endl;
-
-    std::cout << "Exporting ressults" << std::endl;
+    std::cout << "Exporting results" << std::endl;
     std::ofstream csvFile("ray_results.csv");
     csvFile << "pointId,polygonId\n";
     for (int i = 0; i < numRays; ++i) {
@@ -307,6 +350,8 @@ int main(int argc, char* argv[])
         csvFile << i << "," << polygonId << "\n";
     }
     csvFile.close();
+
+    timer.next("Cleanup");
 
     CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_results)));
     CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_ray_origins)));
@@ -326,6 +371,27 @@ int main(int argc, char* argv[])
     optixProgramGroupDestroy(hitPG);
     optixModuleDestroy(module);
     optixDeviceContextDestroy(context);
+    
+    if (numberOfRuns > 1) {
+        timer.finishAllRuns();
+    } else {
+        timer.finish();
+    }
+    
+    std::cout << std::endl;
+    std::cout << "Number of rays processed: " << numRays << std::endl;
+    
+    if (numberOfRuns > 1) {
+        long long avgQueryTime = timer.getAveragePhaseDuration("Query");
+        if (avgQueryTime > 0) {
+            std::cout << "Average query time per ray (over " << numberOfRuns << " runs): " 
+                      << (double)avgQueryTime / numRays << " μs" << std::endl;
+        }
+    } else {
+        std::cout << "Average query time per ray: " << (double)timer.getPhaseDuration("Query") / numRays << " μs" << std::endl;
+    }
+    
+    std::cout << "Geometry: " << geometry.vertices.size() << " vertices, " << geometry.indices.size() << " triangles" << std::endl;
 
     return 0;
 } 

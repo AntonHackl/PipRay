@@ -28,6 +28,7 @@ set(CPP_SOURCE   ${SRC_DIR}/main.cpp)
 set(DATASET_LOADER_SOURCE ${SRC_DIR}/dataset_loader.cpp)
 set(TRIANGULATE_SOURCE ${SRC_DIR}/triangulate_dataset.cpp)
 set(TRIANGULATION_LIB_SOURCE ${SRC_DIR}/triangulation.cpp)
+set(TIMER_SOURCE ${SRC_DIR}/timer.cpp)
 
 set(PTX_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR})
 set(OPTIX_MODULE_EXTENSION ".ptx")
@@ -41,7 +42,7 @@ NVCUDA_COMPILE_MODULE(
     NVCC_OPTIONS  "${OPTIX_PROGRAM_TARGET}" "--gpu-architecture=sm_75" "--relocatable-device-code=true" "--expt-relaxed-constexpr" "-I${OptiX_INCLUDE}"
 )
 
-add_executable(raytracer ${CPP_SOURCE} ${DATASET_LOADER_SOURCE} ${TRIANGULATION_LIB_SOURCE})
+add_executable(raytracer ${CPP_SOURCE} ${DATASET_LOADER_SOURCE} ${TRIANGULATION_LIB_SOURCE} ${TIMER_SOURCE})
 
 target_include_directories(raytracer PRIVATE 
     ${CUDA_INCLUDE_DIRS} 
