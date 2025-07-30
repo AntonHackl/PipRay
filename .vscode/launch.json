@@ -31,8 +31,17 @@
                 "${workspaceFolder}/dtl_cnty.wkt",
                 "200000",
                 "--output",
-                "dtl_cnty_points.wkt"
+                "${workspaceFolder}/dtl_cnty_points.wkt"
             ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Validate Ray Results",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/validate_ray_results.py",
+            "args": [],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}"
         }

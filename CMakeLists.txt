@@ -61,10 +61,10 @@ target_link_libraries(raytracer PRIVATE ${CUDA_LIBRARIES} ${CUDA_CUDA_LIBRARY})
 
 set_target_properties(raytracer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin) 
 
-add_executable(triangulate_dataset ${TRIANGULATE_SOURCE} ${TRIANGULATION_LIB_SOURCE})
+# add_executable(triangulate_dataset ${TRIANGULATE_SOURCE} ${TRIANGULATION_LIB_SOURCE})
 
-target_include_directories(triangulate_dataset PRIVATE 
-    ${CMAKE_CURRENT_SOURCE_DIR}/CDT/CDT/include
-    C:/Users/anton/Documents/Uni/vcpkg/installed/x64-windows/include)
+# target_include_directories(triangulate_dataset PRIVATE 
+#     ${CMAKE_CURRENT_SOURCE_DIR}/CDT/CDT/include
+#     C:/Users/anton/Documents/Uni/vcpkg/installed/x64-windows/include)
 
-set_target_properties(triangulate_dataset PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin) 
+# set_target_properties(triangulate_dataset PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin) 

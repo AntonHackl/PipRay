@@ -189,8 +189,6 @@ int main(int argc, char* argv[])
     OptixPipeline pipeline = nullptr;
     OPTIX_CHECK(optixPipelineCreate(context,&pipelineCompileOptions,&linkOptions,pgs.data(),pgs.size(),nullptr,nullptr,&pipeline));
 
-    auto optix_start = std::chrono::high_resolution_clock::now();
-
     struct __align__(OPTIX_SBT_RECORD_ALIGNMENT) RaygenRecord { char header[OPTIX_SBT_RECORD_HEADER_SIZE]; RayGenData data; };
     struct __align__(OPTIX_SBT_RECORD_ALIGNMENT) MissRecord    { char header[OPTIX_SBT_RECORD_HEADER_SIZE]; HitGroupData data; };
     struct __align__(OPTIX_SBT_RECORD_ALIGNMENT) HitRecord     { char header[OPTIX_SBT_RECORD_HEADER_SIZE]; HitGroupData data; };
@@ -247,6 +245,8 @@ int main(int argc, char* argv[])
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_triangle_to_polygon), geometry.triangleToPolygon.size() * sizeof(int)));
     CUDA_CHECK(cudaMemcpy(d_triangle_to_polygon, geometry.triangleToPolygon.data(), geometry.triangleToPolygon.size() * sizeof(int), cudaMemcpyHostToDevice));
     
+    auto optix_start = std::chrono::high_resolution_clock::now();
+    
     LaunchParams lp = {};
     lp.handle = gasHandle;
     lp.ray_origins = d_ray_origins;
@@ -295,6 +295,18 @@ int main(int argc, char* argv[])
     std::cout << "Ray tracing execution took: " << optix_duration.count() << " microseconds (" << (double)optix_duration.count() / 1000.0 << " ms)" << std::endl;
     std::cout << "Number of rays processed: " << numRays << std::endl;
     std::cout << "Average time per ray: " << (double)optix_duration.count() / numRays << " microseconds" << std::endl;
+
+    std::cout << "Exporting ressults" << std::endl;
+    std::ofstream csvFile("ray_results.csv");
+    csvFile << "pointId,polygonId\n";
+    for (int i = 0; i < numRays; ++i) {
+        int polygonId = -1;
+        if (h_results[i].hit) {
+            polygonId = geometry.triangleToPolygon[h_results[i].triangle_index];
+        }
+        csvFile << i << "," << polygonId << "\n";
+    }
+    csvFile.close();
 
     CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_results)));
     CUDA_CHECK(cudaFree(reinterpret_cast<void*>(d_ray_origins)));

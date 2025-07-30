@@ -13,11 +13,16 @@
 #include <boost/geometry/geometries/polygon.hpp>
 #include <boost/geometry/io/wkt/wkt.hpp>
 
+struct PolygonWithHoles {
+    std::vector<CDT::V2d<float>> outer;
+    std::vector<std::vector<CDT::V2d<float>>> holes;
+};
+
 // Function to read polygon vertices from a WKT file
-std::vector<std::vector<CDT::V2d<float>>> readPolygonVerticesFromFile(const std::string& filepath);
+std::vector<PolygonWithHoles> readPolygonVerticesFromFile(const std::string& filepath);
 
 // Function to triangulate a single polygon
-CDT::TriangleVec triangulatePolygon(const std::vector<CDT::V2d<float>>& polygon);
+CDT::TriangleVec triangulatePolygon(const PolygonWithHoles& polygon);
 
 // Function to count total triangles from triangulated polygons
 size_t countTriangles(const std::vector<CDT::TriangleVec>& triangulated_polygons);

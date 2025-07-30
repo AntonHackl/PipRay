@@ -77,7 +77,7 @@ int main(int argc, char* argv[])
     testFile.close();
 
     // Read polygons from the input WKT file using triangulation library
-    vector<vector<CDT::V2d<float>>> polygons;
+    vector<PolygonWithHoles> polygons;
     try {
         polygons = readPolygonVerticesFromFile(inputFilepath);
     } catch (const exception& e) {

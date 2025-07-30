@@ -14,8 +14,8 @@ GeometryData loadDatasetGeometry(const std::string& datasetPath) {
     if (!datasetPath.empty()) {
         std::cout << "=== Dataset Triangulation ===" << std::endl;
         std::cout << "Loading polygons from: " << datasetPath << std::endl;
-        
-        std::vector<std::vector<CDT::V2d<float>>> polygons = readPolygonVerticesFromFile(datasetPath);
+
+        std::vector<PolygonWithHoles> polygons = readPolygonVerticesFromFile(datasetPath);
         if (polygons.empty()) {
             std::cerr << "Error: No valid polygons found in dataset file." << std::endl;
             return geometry;
@@ -23,28 +23,78 @@ GeometryData loadDatasetGeometry(const std::string& datasetPath) {
         
         std::cout << "Found " << polygons.size() << " polygons in dataset" << std::endl;
         
+        // Store successfully triangulated polygons and their indices
         std::vector<CDT::TriangleVec> triangulated_polygons;
-        for (const auto& poly : polygons) {
-            auto triangulated = triangulatePolygon(poly);
-            triangulated_polygons.push_back(triangulated);
+        std::vector<size_t> valid_polygon_indices;  // Track which original polygons are valid
+        
+        for (size_t poly_idx = 0; poly_idx < polygons.size(); ++poly_idx) {
+            const auto& poly = polygons[poly_idx];
+            
+            try {
+                auto triangulated = triangulatePolygon(poly);
+                
+                // Check if triangulation was successful (has triangles and they're valid)
+                if (triangulated.empty()) {
+                    std::cout << "Warning: Polygon " << poly_idx << " triangulation failed (empty result) - skipping" << std::endl;
+                    continue;
+                }
+                
+                // Additional validation: check if triangles have valid indices
+                bool valid_triangulation = true;
+                for (const auto& tri : triangulated) {
+                    if (tri.vertices[0] == tri.vertices[1] || 
+                        tri.vertices[1] == tri.vertices[2] || 
+                        tri.vertices[2] == tri.vertices[0]) {
+                        valid_triangulation = false;
+                        break;
+                    }
+                }
+                
+                if (!valid_triangulation) {
+                    std::cout << "Warning: Polygon " << poly_idx << " has degenerated triangles - skipping" << std::endl;
+                    continue;
+                }
+                
+                // Triangulation successful, add to valid polygons
+                triangulated_polygons.push_back(triangulated);
+                valid_polygon_indices.push_back(poly_idx);
+                
+            } catch (const std::exception& e) {
+                std::cout << "Warning: Polygon " << poly_idx << " triangulation failed with exception: " << e.what() << " - skipping" << std::endl;
+                continue;
+            }
         }
         
+        if (triangulated_polygons.empty()) {
+            std::cerr << "Error: No polygons could be successfully triangulated." << std::endl;
+            return geometry;
+        }
+        
+        std::cout << "Successfully triangulated " << triangulated_polygons.size() << " out of " << polygons.size() << " polygons" << std::endl;
         geometry.totalTriangles = countTriangles(triangulated_polygons);
         
         std::cout << "Triangulation completed successfully!" << std::endl;
         std::cout << "Total number of triangles: " << geometry.totalTriangles << std::endl;
         std::cout << "=============================\n" << std::endl;
         
-        // Convert to OptiX format
+        // Convert to OptiX format - only for valid polygons
         std::cout << "Converting dataset triangles to OptiX format..." << std::endl;
         
         size_t vertexOffset = 0;
-        for (size_t poly_idx = 0; poly_idx < triangulated_polygons.size(); ++poly_idx) {
-            const auto& triangles = triangulated_polygons[poly_idx];
-            const auto& polygon_vertices = polygons[poly_idx];
+        for (size_t valid_idx = 0; valid_idx < triangulated_polygons.size(); ++valid_idx) {
+            const auto& triangles = triangulated_polygons[valid_idx];
+            const size_t original_poly_idx = valid_polygon_indices[valid_idx];
+            const auto& polygon = polygons[original_poly_idx];
             
-            for (const auto& vertex : polygon_vertices) {
+            // Add outer ring vertices
+            for (const auto& vertex : polygon.outer) {
                 geometry.vertices.push_back({vertex.x, vertex.y, 0.0f});
+            }
+            // Add hole vertices
+            for (const auto& hole : polygon.holes) {
+                for (const auto& vertex : hole) {
+                    geometry.vertices.push_back({vertex.x, vertex.y, 0.0f});
+                }
             }
             
             for (const auto& tri : triangles) {
@@ -53,11 +103,15 @@ GeometryData loadDatasetGeometry(const std::string& datasetPath) {
                     static_cast<unsigned int>(vertexOffset + tri.vertices[1]),
                     static_cast<unsigned int>(vertexOffset + tri.vertices[2])
                 });
-                // Store the polygon association for this triangle
-                geometry.triangleToPolygon.push_back(static_cast<int>(poly_idx));
+                // Store the polygon association for this triangle (use original polygon index)
+                geometry.triangleToPolygon.push_back(static_cast<int>(original_poly_idx));
             }
             
-            vertexOffset += polygon_vertices.size();
+            // Update vertex offset for next polygon (outer + all holes)
+            vertexOffset += polygon.outer.size();
+            for (const auto& hole : polygon.holes) {
+                vertexOffset += hole.size();
+            }
         }
         
         std::cout << "Dataset converted to " << geometry.vertices.size() << " vertices and " << geometry.indices.size() << " triangles" << std::endl;
@@ -113,19 +167,15 @@ PointData loadPointDataset(const std::string& pointDatasetPath) {
     int lineNum = 0;
     while (std::getline(file, line)) {
         lineNum++;
-        // Trim whitespace
         line.erase(0, line.find_first_not_of(" \t\r\n"));
         line.erase(line.find_last_not_of(" \t\r\n") + 1);
         
-        // Skip empty lines and comments
         if (line.empty() || line[0] == '#') {
             continue;
         }
         
-        // Look for POINT entries
         if (line.find("POINT") != std::string::npos) {
             try {
-                // Parse the WKT POINT format: POINT(x y)
                 size_t start = line.find('(');
                 size_t end = line.find(')');
                 if (start != std::string::npos && end != std::string::npos) {

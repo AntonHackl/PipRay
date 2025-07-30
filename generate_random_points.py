@@ -11,6 +11,9 @@ from shapely.geometry import Polygon
 from shapely.wkt import loads
 import argparse
 
+import matplotlib.pyplot as plt
+from matplotlib.patches import Polygon as MplPolygon
+
 def parse_wkt_file(filename):
     """
     Parse a WKT file and extract all POLYGON geometries.
@@ -22,11 +25,9 @@ def parse_wkt_file(filename):
         for line_num, line in enumerate(file, 1):
             line = line.strip()
             
-            # Skip empty lines and comments
             if not line or line.startswith('#'):
                 continue
                 
-            # Look for POLYGON entries (but not MULTIPOLYGON)
             if 'POLYGON' in line and 'MULTI' not in line:
                 try:
                     # Parse the WKT string
@@ -84,11 +85,12 @@ def main():
     parser.add_argument('--output', '-o', help='Output file for points (default: stdout)')
     parser.add_argument('--format', choices=['wkt', 'csv', 'xy'], default='wkt',
                        help='Output format: wkt (POINT), csv (x,y), or xy (x y)')
+    parser.add_argument('--show', action='store_true', help='Show a plot of the polygons and generated points')
     
     args = parser.parse_args()
     
+
     try:
-        # Parse the WKT file
         print(f"Reading polygons from {args.wkt_file}...")
         polygons = parse_wkt_file(args.wkt_file)
         
@@ -98,16 +100,14 @@ def main():
         
         print(f"Found {len(polygons)} valid polygons")
         
-        # Calculate bounding box
-        min_x, min_y, max_x, max_y = calculate_bounding_box(polygons)
+        # min_x, min_y, max_x, max_y = calculate_bounding_box(polygons)
+        min_x, min_y, max_x, max_y = (-120, 30, -80, 50)
         print(f"Bounding box: ({min_x:.6f}, {min_y:.6f}) to ({max_x:.6f}, {max_y:.6f})")
         print(f"Bounding box dimensions: {max_x - min_x:.6f} x {max_y - min_y:.6f}")
         
-        # Generate random points
         print(f"Generating {args.num_points} random points...")
         points = generate_random_points(min_x, min_y, max_x, max_y, args.num_points)
-        
-        # Output the points
+
         if args.output:
             with open(args.output, 'w') as f:
                 for point in points:
@@ -119,7 +119,6 @@ def main():
                         f.write(f"{point[0]:.6f} {point[1]:.6f}\n")
             print(f"Points written to {args.output}")
         else:
-            # Output to stdout
             for point in points:
                 if args.format == 'wkt':
                     print(f"POINT({point[0]:.6f} {point[1]:.6f})")
@@ -127,9 +126,29 @@ def main():
                     print(f"{point[0]:.6f},{point[1]:.6f}")
                 elif args.format == 'xy':
                     print(f"{point[0]:.6f} {point[1]:.6f}")
-        
+
+        if args.show:
+            _, ax = plt.subplots(figsize=(8, 8))
+            for poly in polygons:
+                if poly.is_empty:
+                    continue
+                if poly.geom_type == 'Polygon':
+                    mpl_poly = MplPolygon(list(poly.exterior.coords), closed=True, edgecolor='blue', facecolor='none', lw=1)
+                    ax.add_patch(mpl_poly)
+                    for interior in poly.interiors:
+                        hole = MplPolygon(list(interior.coords), closed=True, edgecolor='red', facecolor='none', lw=1, ls='--')
+                        ax.add_patch(hole)
+            # xs, ys = zip(*points)
+            # ax.scatter(xs, ys, color='orange', s=10, label='Random Points')
+            ax.set_xlim(min_x, max_x)
+            ax.set_ylim(min_y, max_y)
+            ax.set_aspect('equal', 'box')
+            ax.set_title('Polygons and Random Points')
+            ax.legend()
+            plt.show()
+
         print("Done!")
-        
+
     except FileNotFoundError:
         print(f"Error: File '{args.wkt_file}' not found")
         sys.exit(1)
