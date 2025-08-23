@@ -16,7 +16,8 @@
 #include "dataset_loader.h"
 #include "timer.h"
 
-constexpr const char* ptxPath = "C:/Users/anton/Documents/Uni/PipRay/build/raytracing.ptx";
+// constexpr const char* ptxPath = "C:/Users/anton/Documents/Uni/PipRay/build/raytracing.ptx";
+constexpr const char* ptxPath = "/root/media/Spatial_Data_Management/PipRay/build/raytracing.ptx";
 
 static std::vector<char> readPTX(const char* filename)
 {
@@ -39,6 +40,7 @@ int main(int argc, char* argv[])
     
     std::string datasetPath = "";
     std::string pointDatasetPath = "";
+    std::string outputJsonPath = "performance_timing.json";  // Default output file
     int numberOfRuns = 1;
     
     if (argc > 1) {
@@ -50,14 +52,18 @@ int main(int argc, char* argv[])
             else if (arg == "--points" && i + 1 < argc) {
                 pointDatasetPath = argv[++i];
             }
+            else if (arg == "--output" && i + 1 < argc) {
+                outputJsonPath = argv[++i];
+            }
             else if (arg == "--runs" && i + 1 < argc) {
                 numberOfRuns = std::atoi(argv[++i]);
             }
             else if (arg == "--help" || arg == "-h") {
-                std::cout << "Usage: " << argv[0] << " [--dataset <path_to_wkt_file>] [--points <path_to_point_wkt_file>] [--runs <number>]" << std::endl;
+                std::cout << "Usage: " << argv[0] << " [--dataset <path_to_wkt_file>] [--points <path_to_point_wkt_file>] [--output <json_output_file>] [--runs <number>]" << std::endl;
                 std::cout << "Options:" << std::endl;
                 std::cout << "  --dataset <path>   Path to WKT dataset file to triangulate" << std::endl;
                 std::cout << "  --points <path>    Path to WKT file containing POINT geometries for ray origins" << std::endl;
+                std::cout << "  --output <path>    Path to JSON file for performance timing output" << std::endl;
                 std::cout << "  --runs <number>    Number of times to run the query (for performance testing)" << std::endl;
                 std::cout << "  --help, -h         Show this help message" << std::endl;
                 return 0;
@@ -362,7 +368,7 @@ int main(int argc, char* argv[])
     optixModuleDestroy(module);
     optixDeviceContextDestroy(context);
     
-    timer.finish("test.json");
+    timer.finish(outputJsonPath);
     
     std::cout << std::endl;
     std::cout << "Number of rays processed: " << numRays << std::endl;

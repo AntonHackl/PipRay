@@ -9,10 +9,31 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <iomanip>
 
 #include "triangulation.h"
 
 using namespace std;
+
+// Simple cross-platform progress bar
+void printProgressBar(size_t current, size_t total, int barWidth = 50) {
+    float progress = static_cast<float>(current) / total;
+    int pos = static_cast<int>(barWidth * progress);
+    
+    std::cout << "\r[";
+    for (int i = 0; i < barWidth; ++i) {
+        if (i < pos) std::cout << "=";
+        else if (i == pos) std::cout << ">";
+        else std::cout << " ";
+    }
+    std::cout << "] " << std::fixed << std::setprecision(1) 
+              << (progress * 100.0) << "% (" << current << "/" << total << ")";
+    std::cout.flush();
+    
+    if (current == total) {
+        std::cout << std::endl;
+    }
+}
 
 void printUsage(const string& programName)
 {
@@ -94,15 +115,37 @@ int main(int argc, char* argv[])
 
     // Triangulate all polygons using the triangulation library
     vector<CDT::TriangleVec> triangulated_polygons;
-    for (const auto& polygon : polygons) {
+    TriangulationStats stats;  // Track triangulation method statistics
+    
+    cout << "Triangulating " << polygons.size() << " polygons..." << endl;
+    
+    for (size_t i = 0; i < polygons.size(); ++i) {
+        // Update progress bar
+        printProgressBar(i + 1, polygons.size());
+        
+        const auto& polygon = polygons[i];
         try {
-            CDT::TriangleVec triangles = triangulatePolygon(polygon);
+            auto result = triangulatePolygon(polygon);
+            CDT::TriangleVec triangles = result.first;
+            int method_used = result.second;
+            
+            // Update statistics based on method used
+            if (method_used == 0) stats.default_method++;
+            else if (method_used == 1) stats.try_resolve_method++;
+            else if (method_used == 2) stats.dont_check_method++;
+            else if (method_used == 3) stats.failed_method++;
+            
             triangulated_polygons.push_back(triangles);
         } catch (const exception& e) {
+            cout << endl;  // New line after progress bar
             cerr << "Error triangulating polygon: " << e.what() << endl;
             return 1;
         }
     }
+    
+    // Print triangulation method statistics
+    cout << endl;  // New line after progress bar
+    stats.print();
 
     // cout << "Number of polygons: " << polygons.size() << endl;
 
@@ -120,19 +163,26 @@ int main(int argc, char* argv[])
         ++poly_idx)
     {
         const auto& triangles = triangulated_polygons[poly_idx];
-        const auto& vertices = polygons[poly_idx];
+        const auto& polygon = polygons[poly_idx];
+        
+        // Create a single vertex list from outer ring and holes
+        std::vector<CDT::V2d<float>> all_vertices = polygon.outer;
+        for(const auto& hole : polygon.holes) {
+            all_vertices.insert(all_vertices.end(), hole.begin(), hole.end());
+        }
+        
         wkt_out << "# Triangles for polygon " << poly_idx << std::endl;
         for(const auto& tri : triangles)
         {
             BoostPolygon poly;
             poly.outer().push_back(
-                {vertices[tri.vertices[0]].x, vertices[tri.vertices[0]].y});
+                {all_vertices[tri.vertices[0]].x, all_vertices[tri.vertices[0]].y});
             poly.outer().push_back(
-                {vertices[tri.vertices[1]].x, vertices[tri.vertices[1]].y});
+                {all_vertices[tri.vertices[1]].x, all_vertices[tri.vertices[1]].y});
             poly.outer().push_back(
-                {vertices[tri.vertices[2]].x, vertices[tri.vertices[2]].y});
+                {all_vertices[tri.vertices[2]].x, all_vertices[tri.vertices[2]].y});
             poly.outer().push_back(
-                {vertices[tri.vertices[0]].x, vertices[tri.vertices[0]].y});
+                {all_vertices[tri.vertices[0]].x, all_vertices[tri.vertices[0]].y});
             wkt_out << boost::geometry::wkt(poly) << std::endl;
         }
         wkt_out << std::endl;

@@ -91,10 +91,8 @@ std::vector<PolygonWithHoles> readPolygonVerticesFromFile(const std::string& fil
     return all_polygons;
 }
 
-CDT::TriangleVec triangulatePolygon(const PolygonWithHoles& poly)
+std::pair<CDT::TriangleVec, int> triangulatePolygon(const PolygonWithHoles& poly)
 {
-    CDT::Triangulation<float> cdt;
-
     // Insert all vertices (outer + holes)
     std::vector<CDT::V2d<float>> all_vertices = poly.outer;
     std::vector<size_t> outer_indices, hole_start_indices;
@@ -103,28 +101,80 @@ CDT::TriangleVec triangulatePolygon(const PolygonWithHoles& poly)
         hole_start_indices.push_back(all_vertices.size());
         all_vertices.insert(all_vertices.end(), hole.begin(), hole.end());
     }
-    cdt.insertVertices(all_vertices);
-
-    // Insert outer ring edges
+    
+    // Remove duplicate vertices - this handles touching points correctly
+    auto duplicates_info = CDT::RemoveDuplicates(all_vertices);
+    
+    // Insert outer ring edges (adjusted for removed duplicates)
     std::vector<CDT::Edge> edges;
-    for(size_t i = 0; i < poly.outer.size(); ++i) {
-        size_t next = (i + 1) % poly.outer.size();
-        edges.push_back(CDT::Edge(CDT::VertInd(i), CDT::VertInd(next)));
+    size_t original_outer_size = poly.outer.size();
+    for(size_t i = 0; i < original_outer_size; ++i) {
+        size_t next = (i + 1) % original_outer_size;
+        // Only add edge if the vertices are different after duplicate removal
+        size_t mapped_i = duplicates_info.mapping[i];
+        size_t mapped_next = duplicates_info.mapping[next];
+        if (mapped_i != mapped_next) {
+            edges.push_back(CDT::Edge(CDT::VertInd(mapped_i), CDT::VertInd(mapped_next)));
+        }
     }
-    // Insert hole edges
-    size_t vert_offset = poly.outer.size();
+    
+    // Insert hole edges (adjusted for removed duplicates)
+    size_t vert_offset = original_outer_size;
     for(const auto& hole : poly.holes) {
         for(size_t i = 0; i < hole.size(); ++i) {
             size_t idx1 = vert_offset + i;
             size_t idx2 = vert_offset + ((i + 1) % hole.size());
-            edges.push_back(CDT::Edge(CDT::VertInd(idx1), CDT::VertInd(idx2)));
+            // Only add edge if the vertices are different after duplicate removal
+            size_t mapped_idx1 = duplicates_info.mapping[idx1];
+            size_t mapped_idx2 = duplicates_info.mapping[idx2];
+            if (mapped_idx1 != mapped_idx2) {
+                edges.push_back(CDT::Edge(CDT::VertInd(mapped_idx1), CDT::VertInd(mapped_idx2)));
+            }
         }
         vert_offset += hole.size();
     }
-    cdt.insertEdges(edges);
-
-    cdt.eraseOuterTrianglesAndHoles();
-    return cdt.triangles;
+    
+    // Try different CDT strategies
+    try {
+        // Method 0: Default CDT
+        CDT::Triangulation<float> cdt;
+        cdt.insertVertices(all_vertices);
+        cdt.insertEdges(edges);
+        cdt.eraseOuterTrianglesAndHoles();
+        return std::make_pair(cdt.triangles, 0);
+    } catch (const CDT::IntersectingConstraintsError&) {
+        try {
+            // Method 1: Try to resolve intersections
+            CDT::Triangulation<float> cdt_resolve(
+                CDT::VertexInsertionOrder::AsProvided,
+                CDT::IntersectingConstraintEdges::TryResolve,
+                0.0f
+            );
+            cdt_resolve.insertVertices(all_vertices);
+            cdt_resolve.insertEdges(edges);
+            cdt_resolve.eraseOuterTrianglesAndHoles();
+            return std::make_pair(cdt_resolve.triangles, 1);
+        } catch (const std::exception&) {
+            try {
+                // Method 2: Don't check for intersections
+                CDT::Triangulation<float> cdt_nocheck(
+                    CDT::VertexInsertionOrder::AsProvided,
+                    CDT::IntersectingConstraintEdges::DontCheck,
+                    0.0f
+                );
+                cdt_nocheck.insertVertices(all_vertices);
+                cdt_nocheck.insertEdges(edges);
+                cdt_nocheck.eraseOuterTrianglesAndHoles();
+                return std::make_pair(cdt_nocheck.triangles, 2);
+            } catch (const std::exception&) {
+                // Method 3: All methods failed
+                return std::make_pair(CDT::TriangleVec(), 3);
+            }
+        }
+    } catch (const std::exception&) {
+        // Method 3: All methods failed
+        return std::make_pair(CDT::TriangleVec(), 3);
+    }
 }
 
 size_t countTriangles(const std::vector<CDT::TriangleVec>& triangulated_polygons)

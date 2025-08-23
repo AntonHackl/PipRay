@@ -5,8 +5,29 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <iomanip>
 
 using namespace std;
+
+// Simple cross-platform progress bar
+void printProgressBar(size_t current, size_t total, int barWidth = 50) {
+    float progress = static_cast<float>(current) / total;
+    int pos = static_cast<int>(barWidth * progress);
+    
+    std::cout << "\r[";
+    for (int i = 0; i < barWidth; ++i) {
+        if (i < pos) std::cout << "=";
+        else if (i == pos) std::cout << ">";
+        else std::cout << " ";
+    }
+    std::cout << "] " << std::fixed << std::setprecision(1) 
+              << (progress * 100.0) << "% (" << current << "/" << total << ")";
+    std::cout.flush();
+    
+    if (current == total) {
+        std::cout << std::endl;
+    }
+}
 
 GeometryData loadDatasetGeometry(const std::string& datasetPath) {
     GeometryData geometry;
@@ -22,20 +43,33 @@ GeometryData loadDatasetGeometry(const std::string& datasetPath) {
         }
         
         std::cout << "Found " << polygons.size() << " polygons in dataset" << std::endl;
+        std::cout << "Triangulating polygons..." << std::endl;
         
         // Store successfully triangulated polygons and their indices
         std::vector<CDT::TriangleVec> triangulated_polygons;
         std::vector<size_t> valid_polygon_indices;  // Track which original polygons are valid
+        TriangulationStats stats;  // Track triangulation method statistics
         
         for (size_t poly_idx = 0; poly_idx < polygons.size(); ++poly_idx) {
+            if (poly_idx % 10000 == 0 || poly_idx == polygons.size() - 1)  {
+                printProgressBar(poly_idx + 1, polygons.size());
+            }
+            
             const auto& poly = polygons[poly_idx];
             
             try {
-                auto triangulated = triangulatePolygon(poly);
+                auto result = triangulatePolygon(poly);
+                auto triangulated = result.first;
+                int method_used = result.second;
+                
+                // Update statistics based on method used
+                if (method_used == 0) stats.default_method++;
+                else if (method_used == 1) stats.try_resolve_method++;
+                else if (method_used == 2) stats.dont_check_method++;
+                else if (method_used == 3) stats.failed_method++;
                 
                 // Check if triangulation was successful (has triangles and they're valid)
                 if (triangulated.empty()) {
-                    std::cout << "Warning: Polygon " << poly_idx << " triangulation failed (empty result) - skipping" << std::endl;
                     continue;
                 }
                 
@@ -51,7 +85,6 @@ GeometryData loadDatasetGeometry(const std::string& datasetPath) {
                 }
                 
                 if (!valid_triangulation) {
-                    std::cout << "Warning: Polygon " << poly_idx << " has degenerated triangles - skipping" << std::endl;
                     continue;
                 }
                 
@@ -60,10 +93,13 @@ GeometryData loadDatasetGeometry(const std::string& datasetPath) {
                 valid_polygon_indices.push_back(poly_idx);
                 
             } catch (const std::exception& e) {
-                std::cout << "Warning: Polygon " << poly_idx << " triangulation failed with exception: " << e.what() << " - skipping" << std::endl;
                 continue;
             }
         }
+        
+        // Print triangulation method statistics
+        std::cout << std::endl;  // New line after progress bar
+        stats.print();
         
         if (triangulated_polygons.empty()) {
             std::cerr << "Error: No polygons could be successfully triangulated." << std::endl;

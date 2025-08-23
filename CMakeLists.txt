@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.18)
 
-if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+# Only use vcpkg on Windows
+if(WIN32 AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
     set(CMAKE_TOOLCHAIN_FILE "C:/Users/anton/Documents/Uni/vcpkg/scripts/buildsystems/vcpkg.cmake")
 endif()
 
@@ -13,7 +14,19 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Add preprocessor definitions to prevent Windows min/max macro conflicts
-add_definitions(-DNOMINMAX)
+if(WIN32)
+    add_definitions(-DNOMINMAX)
+endif()
+
+# Find required packages
+if(WIN32)
+    # Windows: use vcpkg packages
+    find_package(Boost REQUIRED COMPONENTS geometry)
+else()
+    # Linux: use system packages
+    find_package(PkgConfig REQUIRED)
+    find_package(Boost REQUIRED COMPONENTS system filesystem)
+endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
@@ -47,17 +60,32 @@ add_executable(raytracer ${CPP_SOURCE} ${DATASET_LOADER_SOURCE} ${TRIANGULATION_
 
 add_executable(triangulate_single_polygon ${TRIANGULATE_SINGLE_SOURCE} ${TRIANGULATION_LIB_SOURCE})
 
-target_include_directories(raytracer PRIVATE 
-    ${CUDA_INCLUDE_DIRS} 
-    ${OptiX_INCLUDE} 
-    ${SRC_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/CDT/CDT/include
-    C:/Users/anton/Documents/Uni/vcpkg/installed/x64-windows/include)
+# Platform-specific include directories
+if(WIN32)
+    target_include_directories(raytracer PRIVATE 
+        ${CUDA_INCLUDE_DIRS} 
+        ${OptiX_INCLUDE} 
+        ${SRC_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/CDT/CDT/include
+        C:/Users/anton/Documents/Uni/vcpkg/installed/x64-windows/include)
 
-target_include_directories(triangulate_single_polygon PRIVATE 
-    ${SRC_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/CDT/CDT/include
-    C:/Users/anton/Documents/Uni/vcpkg/installed/x64-windows/include)
+    target_include_directories(triangulate_single_polygon PRIVATE 
+        ${SRC_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/CDT/CDT/include
+        C:/Users/anton/Documents/Uni/vcpkg/installed/x64-windows/include)
+else()
+    target_include_directories(raytracer PRIVATE 
+        ${CUDA_INCLUDE_DIRS} 
+        ${OptiX_INCLUDE} 
+        ${SRC_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/CDT/CDT/include
+        ${Boost_INCLUDE_DIRS})
+
+    target_include_directories(triangulate_single_polygon PRIVATE 
+        ${SRC_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/CDT/CDT/include
+        ${Boost_INCLUDE_DIRS})
+endif()
 
 set(PTX_FILE "${PTX_OUTPUT_DIR}/raytracing${OPTIX_MODULE_EXTENSION}")
 add_custom_target(copy_ptx DEPENDS ${PTX_FILES})
@@ -68,7 +96,13 @@ add_dependencies(raytracer copy_ptx)
 # RayJoin works without that explicit linkage, so mirror the same approach here.
 target_link_libraries(raytracer PRIVATE ${CUDA_LIBRARIES} ${CUDA_CUDA_LIBRARY})
 
-# No external dependencies needed for the triangulation executable
+# Platform-specific linking for triangulate_single_polygon
+if(WIN32)
+    # No external dependencies needed for the triangulation executable on Windows
+else()
+    # Link Boost libraries on Linux
+    target_link_libraries(triangulate_single_polygon PRIVATE ${Boost_LIBRARIES})
+endif()
 
 set_target_properties(raytracer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set_target_properties(triangulate_single_polygon PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin) 
