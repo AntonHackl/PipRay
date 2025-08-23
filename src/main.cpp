@@ -54,10 +54,11 @@ int main(int argc, char* argv[])
                 numberOfRuns = std::atoi(argv[++i]);
             }
             else if (arg == "--help" || arg == "-h") {
-                std::cout << "Usage: " << argv[0] << " [--dataset <path_to_wkt_file>] [--points <path_to_point_wkt_file>]" << std::endl;
+                std::cout << "Usage: " << argv[0] << " [--dataset <path_to_wkt_file>] [--points <path_to_point_wkt_file>] [--runs <number>]" << std::endl;
                 std::cout << "Options:" << std::endl;
                 std::cout << "  --dataset <path>   Path to WKT dataset file to triangulate" << std::endl;
                 std::cout << "  --points <path>    Path to WKT file containing POINT geometries for ray origins" << std::endl;
+                std::cout << "  --runs <number>    Number of times to run the query (for performance testing)" << std::endl;
                 std::cout << "  --help, -h         Show this help message" << std::endl;
                 return 0;
             }
@@ -261,19 +262,14 @@ int main(int argc, char* argv[])
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_triangle_to_polygon), geometry.triangleToPolygon.size() * sizeof(int)));
     CUDA_CHECK(cudaMemcpy(d_triangle_to_polygon, geometry.triangleToPolygon.data(), geometry.triangleToPolygon.size() * sizeof(int), cudaMemcpyHostToDevice));
     
-    // Handle multiple runs for performance testing
+    timer.next("Query");
+    
     if (numberOfRuns > 1) {
         std::cout << "\n=== Running " << numberOfRuns << " iterations for performance measurement ===" << std::endl;
         
-        // Perform multiple runs for timing
+        // Perform multiple runs within a single Query phase
         for (int run = 0; run < numberOfRuns; ++run) {
             std::cout << "Run " << (run + 1) << "/" << numberOfRuns << std::endl;
-            
-            if (run == 0) {
-                timer.startRun("Query");
-            } else {
-                timer.nextRun("Query");
-            }
             
             LaunchParams lp = {};
             lp.handle = gasHandle;
@@ -286,17 +282,11 @@ int main(int argc, char* argv[])
             
             OPTIX_CHECK(optixLaunch(pipeline, 0, d_lp, sizeof(LaunchParams), &sbt, numRays, 1, 1));
             CUDA_CHECK(cudaDeviceSynchronize());
-            
-            timer.finishRun();
         }
         
         // Copy results from last run for output
         CUDA_CHECK(cudaMemcpy(h_results.data(), d_results, numRays * sizeof(RayResult), cudaMemcpyDeviceToHost));
-        
-        timer.next("Output");
     } else {
-        timer.next("Query");
-        
         LaunchParams lp = {};
         lp.handle = gasHandle;
         lp.ray_origins = d_ray_origins;
@@ -312,9 +302,9 @@ int main(int argc, char* argv[])
         CUDA_CHECK(cudaDeviceSynchronize());
         
         CUDA_CHECK(cudaMemcpy(h_results.data(), d_results, numRays * sizeof(RayResult), cudaMemcpyDeviceToHost));
-
-        timer.next("Output");
     }
+
+    timer.next("Output");
 
     if (numRays <= 100) {
         std::cout << "\n=== Ray Results ===" << std::endl;
@@ -372,21 +362,14 @@ int main(int argc, char* argv[])
     optixModuleDestroy(module);
     optixDeviceContextDestroy(context);
     
-    if (numberOfRuns > 1) {
-        timer.finishAllRuns();
-    } else {
-        timer.finish();
-    }
+    timer.finish("test.json");
     
     std::cout << std::endl;
     std::cout << "Number of rays processed: " << numRays << std::endl;
     
     if (numberOfRuns > 1) {
-        long long avgQueryTime = timer.getAveragePhaseDuration("Query");
-        if (avgQueryTime > 0) {
-            std::cout << "Average query time per ray (over " << numberOfRuns << " runs): " 
-                      << (double)avgQueryTime / numRays << " μs" << std::endl;
-        }
+        std::cout << "Number of runs: " << numberOfRuns << std::endl;
+        std::cout << "Average query time per ray per run: " << (double)timer.getPhaseDuration("Query") / (numRays * numberOfRuns) << " μs" << std::endl;
     } else {
         std::cout << "Average query time per ray: " << (double)timer.getPhaseDuration("Query") / numRays << " μs" << std::endl;
     }

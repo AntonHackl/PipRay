@@ -100,8 +100,8 @@ def main():
         
         print(f"Found {len(polygons)} valid polygons")
         
-        # min_x, min_y, max_x, max_y = calculate_bounding_box(polygons)
-        min_x, min_y, max_x, max_y = (-120, 30, -80, 50)
+        min_x, min_y, max_x, max_y = calculate_bounding_box(polygons)
+        # min_x, min_y, max_x, max_y = (-120, 30, -80, 50)
         print(f"Bounding box: ({min_x:.6f}, {min_y:.6f}) to ({max_x:.6f}, {max_y:.6f})")
         print(f"Bounding box dimensions: {max_x - min_x:.6f} x {max_y - min_y:.6f}")
         

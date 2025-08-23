@@ -7,8 +7,9 @@
             "request": "launch",
             "program": "${workspaceFolder}/build/bin/Debug/raytracer.exe",
             "args": [
-                "--dataset", "${workspaceFolder}/dtl_cnty.wkt",
-                "--points", "${workspaceFolder}/dtl_cnty_points.wkt"
+                "--dataset", "${workspaceFolder}/parks_Europe_small.wkt",
+                "--points", "${workspaceFolder}/parks_Europe_2000000.wkt",
+                "--runs", "10",
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
@@ -28,12 +29,10 @@
             "request": "launch",
             "program": "${workspaceFolder}/generate_random_points.py",
             "args": [
-                "${workspaceFolder}/dtl_cnty.wkt",
-                "200000",
-                "--runs",
-                "10",
+                "${workspaceFolder}/parks_Europe_small.wkt",
+                "2000000",
                 "--output",
-                "${workspaceFolder}/dtl_cnty_points.wkt"
+                "${workspaceFolder}/parks_Europe_2000000.wkt",
             ],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}"
@@ -43,6 +42,57 @@
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/validate_ray_results.py",
+            "args": [],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Plot Triangulation",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/plot_triangulation.py",
+            "args": [],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Triangulate Single Polygon",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug/triangulate_single_polygon.exe",
+            "args": [
+                "${workspaceFolder}/dtl_cnty.wkt",
+                "5"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "CMake: build"
+        },
+        {
+            "name": "Visualize Single Polygon Triangulation",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/visualize_single_polygon.py",
+            "args": [],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Visualize Performance Results",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/visualize_performance_results.py",
+            "args": [],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Extract Parks Europe Small",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/extract_parks_europe_small.py",
             "args": [],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}"

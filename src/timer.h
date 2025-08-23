@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 #include <iostream>
-#include <map>
+#include <fstream>
 
 class PerformanceTimer {
 public:
@@ -14,20 +14,11 @@ public:
     
     void next(const std::string& phaseName);
     
-    void finish();
+    void finish(const std::string& filename);
     
     long long getPhaseDuration(const std::string& phaseName) const;
     
     long long getTotalDuration() const;
-    
-    // Multi-run support methods
-    void startRun(const std::string& phaseName);
-    void nextRun(const std::string& phaseName);
-    void finishRun();
-    void finishAllRuns();
-    
-    long long getAveragePhaseDuration(const std::string& phaseName) const;
-    int getRunCount() const;
 
 private:
     struct Phase {
@@ -42,14 +33,7 @@ private:
     std::chrono::high_resolution_clock::time_point total_end;
     bool is_running;
     
-    std::map<std::string, std::vector<long long>> run_phase_durations;
-    std::vector<Phase> current_run_phases;
-    std::chrono::high_resolution_clock::time_point current_run_start;
-    bool is_multi_run_mode;
-    int run_count;
-    
     void endCurrentPhase();
-    void endCurrentRunPhase();
-    void printResults() const;
-    void printMultiRunResults() const;
+    void printResults(const std::string& filename) const;
+    void writeResultsToFile(const std::string& filename) const;
 };

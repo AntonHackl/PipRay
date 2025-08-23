@@ -1,6 +1,5 @@
 /build
 /build.bat
-dtl_cnty.wkt
-dtl_cnty_points.wkt
-test_dataset_points.wkt
+*.wkt
 *.csv
+results_*.json

@@ -29,6 +29,7 @@ set(DATASET_LOADER_SOURCE ${SRC_DIR}/dataset_loader.cpp)
 set(TRIANGULATE_SOURCE ${SRC_DIR}/triangulate_dataset.cpp)
 set(TRIANGULATION_LIB_SOURCE ${SRC_DIR}/triangulation.cpp)
 set(TIMER_SOURCE ${SRC_DIR}/timer.cpp)
+set(TRIANGULATE_SINGLE_SOURCE ${SRC_DIR}/triangulate_single_polygon.cpp)
 
 set(PTX_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR})
 set(OPTIX_MODULE_EXTENSION ".ptx")
@@ -44,9 +45,16 @@ NVCUDA_COMPILE_MODULE(
 
 add_executable(raytracer ${CPP_SOURCE} ${DATASET_LOADER_SOURCE} ${TRIANGULATION_LIB_SOURCE} ${TIMER_SOURCE})
 
+add_executable(triangulate_single_polygon ${TRIANGULATE_SINGLE_SOURCE} ${TRIANGULATION_LIB_SOURCE})
+
 target_include_directories(raytracer PRIVATE 
     ${CUDA_INCLUDE_DIRS} 
     ${OptiX_INCLUDE} 
+    ${SRC_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/CDT/CDT/include
+    C:/Users/anton/Documents/Uni/vcpkg/installed/x64-windows/include)
+
+target_include_directories(triangulate_single_polygon PRIVATE 
     ${SRC_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/CDT/CDT/include
     C:/Users/anton/Documents/Uni/vcpkg/installed/x64-windows/include)
@@ -60,7 +68,10 @@ add_dependencies(raytracer copy_ptx)
 # RayJoin works without that explicit linkage, so mirror the same approach here.
 target_link_libraries(raytracer PRIVATE ${CUDA_LIBRARIES} ${CUDA_CUDA_LIBRARY})
 
-set_target_properties(raytracer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin) 
+# No external dependencies needed for the triangulation executable
+
+set_target_properties(raytracer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set_target_properties(triangulate_single_polygon PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin) 
 
 # add_executable(triangulate_dataset ${TRIANGULATE_SOURCE} ${TRIANGULATION_LIB_SOURCE})
 

@@ -85,3 +85,26 @@ To modify the program for different scenarios:
 2. **Add more triangles**: Extend the `vertices` and `indices` vectors
 3. **Multiple rays**: Change the launch dimensions in `optixLaunch`
 4. **Different geometry**: Use other OptiX geometry types (spheres, curves, etc.)
+
+## Single Polygon Triangulation
+
+This project also includes a system for triangulating individual polygons from the dtl_cnty.wkt dataset using the CDT (Constrained Delaunay Triangulation) library.
+
+### Quick Start
+
+1. **Build the triangulation program**:
+   ```bash
+   ./build_triangulation.sh
+   ```
+
+2. **Triangulate the sixth polygon**:
+   ```bash
+   ./build/bin/triangulate_single_polygon dtl_cnty.wkt 5
+   ```
+
+3. **Visualize the results**:
+   ```bash
+   python visualize_single_polygon.py
+   ```
+
+For detailed instructions, see [TRIANGULATION_README.md](TRIANGULATION_README.md).
