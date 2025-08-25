@@ -16,8 +16,8 @@
 #include "dataset_loader.h"
 #include "timer.h"
 
-// constexpr const char* ptxPath = "C:/Users/anton/Documents/Uni/PipRay/build/raytracing.ptx";
-constexpr const char* ptxPath = "/root/media/Spatial_Data_Management/PipRay/build/raytracing.ptx";
+constexpr const char* ptxPath = "C:/Users/anton/Documents/Uni/PipRay/build/raytracing.ptx";
+// constexpr const char* ptxPath = "/root/media/Spatial_Data_Management/PipRay/build/raytracing.ptx";
 
 static std::vector<char> readPTX(const char* filename)
 {
@@ -38,7 +38,7 @@ int main(int argc, char* argv[])
     PerformanceTimer timer;
     timer.start("Data Reading");
     
-    std::string datasetPath = "";
+    std::string geometryFilePath = "";
     std::string pointDatasetPath = "";
     std::string outputJsonPath = "performance_timing.json";  // Default output file
     int numberOfRuns = 1;
@@ -46,8 +46,8 @@ int main(int argc, char* argv[])
     if (argc > 1) {
         for (int i = 1; i < argc; ++i) {
             std::string arg = argv[i];
-            if (arg == "--dataset" && i + 1 < argc) {
-                datasetPath = argv[++i];
+            if (arg == "--geometry" && i + 1 < argc) {
+                geometryFilePath = argv[++i];
             }
             else if (arg == "--points" && i + 1 < argc) {
                 pointDatasetPath = argv[++i];
@@ -59,9 +59,9 @@ int main(int argc, char* argv[])
                 numberOfRuns = std::atoi(argv[++i]);
             }
             else if (arg == "--help" || arg == "-h") {
-                std::cout << "Usage: " << argv[0] << " [--dataset <path_to_wkt_file>] [--points <path_to_point_wkt_file>] [--output <json_output_file>] [--runs <number>]" << std::endl;
+                std::cout << "Usage: " << argv[0] << " [--geometry <path_to_geometry_file>] [--points <path_to_point_wkt_file>] [--output <json_output_file>] [--runs <number>]" << std::endl;
                 std::cout << "Options:" << std::endl;
-                std::cout << "  --dataset <path>   Path to WKT dataset file to triangulate" << std::endl;
+                std::cout << "  --geometry <path>  Path to preprocessed geometry text file" << std::endl;
                 std::cout << "  --points <path>    Path to WKT file containing POINT geometries for ray origins" << std::endl;
                 std::cout << "  --output <path>    Path to JSON file for performance timing output" << std::endl;
                 std::cout << "  --runs <number>    Number of times to run the query (for performance testing)" << std::endl;
@@ -73,7 +73,16 @@ int main(int argc, char* argv[])
     
     std::cout << "OptiX multiple rays example" << std::endl;
 
-    GeometryData geometry = loadDatasetGeometry(datasetPath);
+    GeometryData geometry;
+    if (!geometryFilePath.empty()) {
+        geometry = loadGeometryFromFile(geometryFilePath);
+    } else {
+        std::cerr << "Error: Geometry file path is required. Use --geometry <path_to_geometry_file>" << std::endl;
+        std::cout << "Note: You can generate a geometry file using the preprocess_dataset tool:" << std::endl;
+        std::cout << "  preprocess_dataset --dataset <wkt_file> --output-geometry <geometry_file.txt>" << std::endl;
+        return 1;
+    }
+    
     if (geometry.vertices.empty()) {
         std::cerr << "Error: Failed to load geometry." << std::endl;
         return 1;

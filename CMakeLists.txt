@@ -22,10 +22,12 @@ endif()
 if(WIN32)
     # Windows: use vcpkg packages
     find_package(Boost REQUIRED COMPONENTS geometry)
+    find_package(CGAL REQUIRED)
 else()
     # Linux: use system packages
     find_package(PkgConfig REQUIRED)
     find_package(Boost REQUIRED COMPONENTS system filesystem)
+    find_package(CGAL REQUIRED)
 endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
@@ -43,6 +45,7 @@ set(TRIANGULATE_SOURCE ${SRC_DIR}/triangulate_dataset.cpp)
 set(TRIANGULATION_LIB_SOURCE ${SRC_DIR}/triangulation.cpp)
 set(TIMER_SOURCE ${SRC_DIR}/timer.cpp)
 set(TRIANGULATE_SINGLE_SOURCE ${SRC_DIR}/triangulate_single_polygon.cpp)
+set(PREPROCESS_SOURCE ${SRC_DIR}/preprocess_dataset.cpp)
 
 set(PTX_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR})
 set(OPTIX_MODULE_EXTENSION ".ptx")
@@ -60,30 +63,36 @@ add_executable(raytracer ${CPP_SOURCE} ${DATASET_LOADER_SOURCE} ${TRIANGULATION_
 
 add_executable(triangulate_single_polygon ${TRIANGULATE_SINGLE_SOURCE} ${TRIANGULATION_LIB_SOURCE})
 
+add_executable(preprocess_dataset ${PREPROCESS_SOURCE} ${DATASET_LOADER_SOURCE} ${TRIANGULATION_LIB_SOURCE} ${TIMER_SOURCE})
+
 # Platform-specific include directories
 if(WIN32)
     target_include_directories(raytracer PRIVATE 
         ${CUDA_INCLUDE_DIRS} 
         ${OptiX_INCLUDE} 
         ${SRC_DIR}
-        ${CMAKE_CURRENT_SOURCE_DIR}/CDT/CDT/include
         C:/Users/anton/Documents/Uni/vcpkg/installed/x64-windows/include)
 
     target_include_directories(triangulate_single_polygon PRIVATE 
         ${SRC_DIR}
-        ${CMAKE_CURRENT_SOURCE_DIR}/CDT/CDT/include
+        C:/Users/anton/Documents/Uni/vcpkg/installed/x64-windows/include)
+        
+    target_include_directories(preprocess_dataset PRIVATE 
+        ${SRC_DIR}
         C:/Users/anton/Documents/Uni/vcpkg/installed/x64-windows/include)
 else()
     target_include_directories(raytracer PRIVATE 
         ${CUDA_INCLUDE_DIRS} 
         ${OptiX_INCLUDE} 
         ${SRC_DIR}
-        ${CMAKE_CURRENT_SOURCE_DIR}/CDT/CDT/include
         ${Boost_INCLUDE_DIRS})
 
     target_include_directories(triangulate_single_polygon PRIVATE 
         ${SRC_DIR}
-        ${CMAKE_CURRENT_SOURCE_DIR}/CDT/CDT/include
+        ${Boost_INCLUDE_DIRS})
+        
+    target_include_directories(preprocess_dataset PRIVATE 
+        ${SRC_DIR}
         ${Boost_INCLUDE_DIRS})
 endif()
 
@@ -94,18 +103,24 @@ add_dependencies(raytracer copy_ptx)
 # OptiX host functions are loaded through the stub headers at runtime, so linking the explicit
 # OptiX libraries is unnecessary and breaks the build when those import libraries are not found.
 # RayJoin works without that explicit linkage, so mirror the same approach here.
-target_link_libraries(raytracer PRIVATE ${CUDA_LIBRARIES} ${CUDA_CUDA_LIBRARY})
+target_link_libraries(raytracer PRIVATE ${CUDA_LIBRARIES} ${CUDA_CUDA_LIBRARY} CGAL::CGAL)
 
-# Platform-specific linking for triangulate_single_polygon
+# Define INCLUDE_OPTIX for raytracer only
+target_compile_definitions(raytracer PRIVATE INCLUDE_OPTIX)
+
+# Platform-specific linking for triangulate_single_polygon and preprocess_dataset
 if(WIN32)
-    # No external dependencies needed for the triangulation executable on Windows
+    target_link_libraries(triangulate_single_polygon PRIVATE CGAL::CGAL)
+    target_link_libraries(preprocess_dataset PRIVATE CGAL::CGAL)
 else()
     # Link Boost libraries on Linux
-    target_link_libraries(triangulate_single_polygon PRIVATE ${Boost_LIBRARIES})
+    target_link_libraries(triangulate_single_polygon PRIVATE ${Boost_LIBRARIES} CGAL::CGAL)
+    target_link_libraries(preprocess_dataset PRIVATE ${Boost_LIBRARIES} CGAL::CGAL)
 endif()
 
 set_target_properties(raytracer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-set_target_properties(triangulate_single_polygon PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin) 
+set_target_properties(triangulate_single_polygon PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set_target_properties(preprocess_dataset PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin) 
 
 # add_executable(triangulate_dataset ${TRIANGULATE_SOURCE} ${TRIANGULATION_LIB_SOURCE})
 

@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 #include <iomanip>
+#include <map>
+#include <array>
 
 using namespace std;
 
@@ -46,12 +48,12 @@ GeometryData loadDatasetGeometry(const std::string& datasetPath) {
         std::cout << "Triangulating polygons..." << std::endl;
         
         // Store successfully triangulated polygons and their indices
-        std::vector<CDT::TriangleVec> triangulated_polygons;
+        std::vector<std::vector<Triangle>> triangulated_polygons;
         std::vector<size_t> valid_polygon_indices;  // Track which original polygons are valid
         TriangulationStats stats;  // Track triangulation method statistics
         
         for (size_t poly_idx = 0; poly_idx < polygons.size(); ++poly_idx) {
-            if (poly_idx % 10000 == 0 || poly_idx == polygons.size() - 1)  {
+            if (poly_idx % 100 == 0 || poly_idx == polygons.size() - 1)  {
                 printProgressBar(poly_idx + 1, polygons.size());
             }
             
@@ -63,9 +65,9 @@ GeometryData loadDatasetGeometry(const std::string& datasetPath) {
                 int method_used = result.second;
                 
                 // Update statistics based on method used
-                if (method_used == 0) stats.default_method++;
-                else if (method_used == 1) stats.try_resolve_method++;
-                else if (method_used == 2) stats.dont_check_method++;
+                if (method_used == 0) stats.cgal_success++;
+                else if (method_used == 1) stats.cgal_repaired++;
+                else if (method_used == 2) stats.cgal_decomposed++;
                 else if (method_used == 3) stats.failed_method++;
                 
                 // Check if triangulation was successful (has triangles and they're valid)
@@ -73,12 +75,12 @@ GeometryData loadDatasetGeometry(const std::string& datasetPath) {
                     continue;
                 }
                 
-                // Additional validation: check if triangles have valid indices
+                // Additional validation: check if triangles have valid vertices
                 bool valid_triangulation = true;
                 for (const auto& tri : triangulated) {
-                    if (tri.vertices[0] == tri.vertices[1] || 
-                        tri.vertices[1] == tri.vertices[2] || 
-                        tri.vertices[2] == tri.vertices[0]) {
+                    if ((tri.vertices[0].x == tri.vertices[1].x && tri.vertices[0].y == tri.vertices[1].y) ||
+                        (tri.vertices[1].x == tri.vertices[2].x && tri.vertices[1].y == tri.vertices[2].y) ||
+                        (tri.vertices[2].x == tri.vertices[0].x && tri.vertices[2].y == tri.vertices[0].y)) {
                         valid_triangulation = false;
                         break;
                     }
@@ -116,37 +118,42 @@ GeometryData loadDatasetGeometry(const std::string& datasetPath) {
         // Convert to OptiX format - only for valid polygons
         std::cout << "Converting dataset triangles to OptiX format..." << std::endl;
         
-        size_t vertexOffset = 0;
         for (size_t valid_idx = 0; valid_idx < triangulated_polygons.size(); ++valid_idx) {
             const auto& triangles = triangulated_polygons[valid_idx];
             const size_t original_poly_idx = valid_polygon_indices[valid_idx];
-            const auto& polygon = polygons[original_poly_idx];
             
-            // Add outer ring vertices
-            for (const auto& vertex : polygon.outer) {
-                geometry.vertices.push_back({vertex.x, vertex.y, 0.0f});
-            }
-            // Add hole vertices
-            for (const auto& hole : polygon.holes) {
-                for (const auto& vertex : hole) {
-                    geometry.vertices.push_back({vertex.x, vertex.y, 0.0f});
+            // Create a map to track unique vertices for this polygon
+            std::map<std::pair<float, float>, size_t> vertex_map;
+            std::vector<Point2D> polygon_vertices;
+            
+            // Process all triangles for this polygon and collect unique vertices
+            for (const auto& tri : triangles) {
+                for (int i = 0; i < 3; ++i) {
+                    std::pair<float, float> vertex_key = {tri.vertices[i].x, tri.vertices[i].y};
+                    if (vertex_map.find(vertex_key) == vertex_map.end()) {
+                        vertex_map[vertex_key] = polygon_vertices.size();
+                        polygon_vertices.push_back(tri.vertices[i]);
+                    }
                 }
             }
             
-            for (const auto& tri : triangles) {
-                geometry.indices.push_back({
-                    static_cast<unsigned int>(vertexOffset + tri.vertices[0]),
-                    static_cast<unsigned int>(vertexOffset + tri.vertices[1]),
-                    static_cast<unsigned int>(vertexOffset + tri.vertices[2])
-                });
-                // Store the polygon association for this triangle (use original polygon index)
-                geometry.triangleToPolygon.push_back(static_cast<int>(original_poly_idx));
+            // Add vertices to global list
+            size_t vertex_offset = geometry.vertices.size();
+            for (const auto& vertex : polygon_vertices) {
+                geometry.vertices.push_back({vertex.x, vertex.y, 0.0f});
             }
             
-            // Update vertex offset for next polygon (outer + all holes)
-            vertexOffset += polygon.outer.size();
-            for (const auto& hole : polygon.holes) {
-                vertexOffset += hole.size();
+            // Add triangles with correct vertex indices
+            for (const auto& tri : triangles) {
+                std::array<unsigned int, 3> indices;
+                for (int i = 0; i < 3; ++i) {
+                    std::pair<float, float> vertex_key = {tri.vertices[i].x, tri.vertices[i].y};
+                    indices[i] = static_cast<unsigned int>(vertex_offset + vertex_map[vertex_key]);
+                }
+                
+                geometry.indices.push_back({indices[0], indices[1], indices[2]});
+                // Store the polygon association for this triangle (use original polygon index)
+                geometry.triangleToPolygon.push_back(static_cast<int>(original_poly_idx));
             }
         }
         
@@ -239,4 +246,86 @@ PointData loadPointDataset(const std::string& pointDatasetPath) {
     std::cout << "=============================\n" << std::endl;
     
     return pointData;
+}
+
+GeometryData loadGeometryFromFile(const std::string& geometryFilePath) {
+    GeometryData geometry;
+    
+    std::cout << "=== Loading Preprocessed Geometry ===" << std::endl;
+    std::cout << "Loading geometry from: " << geometryFilePath << std::endl;
+    
+    std::ifstream file(geometryFilePath);
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open geometry file: " << geometryFilePath << std::endl;
+        return geometry;
+    }
+    
+    std::string line;
+    
+    // Read vertices line
+    if (std::getline(file, line)) {
+        if (line.substr(0, 9) == "vertices:") {
+            std::string vertices_data = line.substr(9); // Remove "vertices:" prefix
+            std::stringstream ss(vertices_data);
+            float x, y, z;
+            while (ss >> x >> y >> z) {
+                geometry.vertices.push_back({x, y, z});
+            }
+        } else {
+            std::cerr << "Error: Expected vertices line first" << std::endl;
+            return GeometryData{};
+        }
+    }
+    
+    // Read indices line
+    if (std::getline(file, line)) {
+        if (line.substr(0, 8) == "indices:") {
+            std::string indices_data = line.substr(8); // Remove "indices:" prefix
+            std::stringstream ss(indices_data);
+            unsigned int i1, i2, i3;
+            while (ss >> i1 >> i2 >> i3) {
+                geometry.indices.push_back({i1, i2, i3});
+            }
+        } else {
+            std::cerr << "Error: Expected indices line second" << std::endl;
+            return GeometryData{};
+        }
+    }
+    
+    // Read triangleToPolygon line
+    if (std::getline(file, line)) {
+        if (line.substr(0, 18) == "triangleToPolygon:") {
+            std::string mapping_data = line.substr(18); // Remove "triangleToPolygon:" prefix
+            std::stringstream ss(mapping_data);
+            int polygonId;
+            while (ss >> polygonId) {
+                geometry.triangleToPolygon.push_back(polygonId);
+            }
+        } else {
+            std::cerr << "Error: Expected triangleToPolygon line third" << std::endl;
+            return GeometryData{};
+        }
+    }
+    
+    // Read total_triangles line
+    if (std::getline(file, line)) {
+        if (line.substr(0, 16) == "total_triangles:") {
+            std::string total_data = line.substr(16); // Remove "total_triangles:" prefix
+            std::stringstream ss(total_data);
+            ss >> geometry.totalTriangles;
+        } else {
+            std::cerr << "Error: Expected total_triangles line fourth" << std::endl;
+            return GeometryData{};
+        }
+    }
+    
+    file.close();
+    
+    std::cout << "Loaded preprocessed geometry:" << std::endl;
+    std::cout << "  Total vertices: " << geometry.vertices.size() << std::endl;
+    std::cout << "  Total triangles: " << geometry.indices.size() << std::endl;
+    std::cout << "  Triangle-to-polygon mappings: " << geometry.triangleToPolygon.size() << std::endl;
+    std::cout << "=============================\n" << std::endl;
+    
+    return geometry;
 } 

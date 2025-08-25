@@ -2,14 +2,31 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Launch OptiX Raytracer",
+            "name": "Preprocess Dataset",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/Debug/preprocess_dataset.exe",
+            "args": [
+                "--dataset", "${workspaceFolder}/dtl_cnty.wkt",
+                "--output-geometry", "${workspaceFolder}/dtl_cnty_preprocessed.json",
+                "--output-timing", "${workspaceFolder}/preprocessing_dtl_cnty_timing.json"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "integratedTerminal",
+            "preLaunchTask": "CMake: build"
+        },
+        {
+            "name": "Launch OptiX Raytracer (with preprocessed data)",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/bin/Debug/raytracer.exe",
             "args": [
-                "--dataset", "${workspaceFolder}/parks_Europe_small.wkt",
-                "--points", "${workspaceFolder}/parks_Europe_2000000.wkt",
+                "--geometry", "${workspaceFolder}/dtl_cnty_preprocessed.json",
+                "--points", "${workspaceFolder}/dtl_cnty_points_100000.wkt",
                 "--runs", "10",
+                "--output", "${workspaceFolder}/raytracing_timing.json"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
@@ -61,8 +78,8 @@
             "request": "launch",
             "program": "${workspaceFolder}/build/bin/Debug/triangulate_single_polygon.exe",
             "args": [
-                "${workspaceFolder}/dtl_cnty.wkt",
-                "5"
+                "${workspaceFolder}/complex_test_dataset.wkt",
+                "5000"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
@@ -96,6 +113,32 @@
             "args": [],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}"
+        },
+        {
+        "name": "Debug Triangulate WKT",
+        "type": "debugpy",
+        "request": "launch",
+        "program": "${workspaceFolder}/triangulate_dataset.py",
+        "args": [
+            "${workspaceFolder}/dtl_cnty.wkt",
+            "-o", "${workspaceFolder}/triangles.geojson",
+            "--wkt-out", "${workspaceFolder}/triangles.wkt",
+            "--quality", "30"
+        ],
+        "console": "integratedTerminal",
+        "justMyCode": true
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Full Pipeline: Preprocess + Raytracing",
+            "configurations": [
+                "Preprocess Dataset",
+                "Launch OptiX Raytracer (with preprocessed data)"
+            ],
+            "stopAll": true,
+            "preLaunchTask": "CMake: build"
         }
     ]
 }
+

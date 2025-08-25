@@ -15,7 +15,9 @@ the triangulation, which ensures that:
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.collections import LineCollection
+import matplotlib.colors as mcolors
 import numpy as np
+import random
 import sys
 
 
@@ -135,7 +137,14 @@ def load_triangulation_data(filename):
             return None
         
         parts = lines[line_index].strip().split()
-        triangles.append([int(parts[0]), int(parts[1]), int(parts[2])])
+        # Parse coordinates: v1_x v1_y v2_x v2_y v3_x v3_y
+        if len(parts) >= 6:
+            triangle = [
+                [float(parts[0]), float(parts[1])],  # vertex 1
+                [float(parts[2]), float(parts[3])],  # vertex 2
+                [float(parts[4]), float(parts[5])]   # vertex 3
+            ]
+            triangles.append(triangle)
         line_index += 1
     
     # Read segments
@@ -236,19 +245,29 @@ def plot_polygon_and_triangulation(data):
     vertices = np.array([[point['x'], point['y']] for point in triangulation['vertices']])
     triangles = triangulation['triangles']
     
-    # Plot triangles
-    for triangle in triangles:
-        triangle_coords = vertices[triangle]
+    # Plot triangles (triangles now contain actual coordinates, not indices)
+    # Generate random colors for each triangle
+    random.seed(42)  # For reproducible colors
+    triangle_colors = []
+    for i in range(len(triangles)):
+        # Generate random RGB values
+        color = (random.random(), random.random(), random.random())
+        triangle_colors.append(color)
+    
+    for i, triangle in enumerate(triangles):
+        triangle_coords = np.array(triangle)  # triangle is already coordinates
         triangle_patch = patches.Polygon(triangle_coords, 
-                                       fill=False, 
-                                       edgecolor='red', 
-                                       linewidth=1,
-                                       alpha=0.7)
+                                       fill=True,
+                                       facecolor=triangle_colors[i],
+                                       edgecolor='black', 
+                                       linewidth=1.5,
+                                       alpha=0.6,
+                                       label=f'Triangle {i+1}' if i < 5 else "")  # Label first 5 triangles only
         ax2.add_patch(triangle_patch)
     
     # Plot vertices
     ax2.scatter(vertices[:, 0], vertices[:, 1], 
-               c='blue', s=20, zorder=5, label='Vertices')
+               c='white', s=30, edgecolors='black', linewidth=1.5, zorder=10, label='Vertices')
     
     # Plot boundary edges (constraints) in bold
     segments = triangulation.get('segments', [])
@@ -275,17 +294,17 @@ def plot_polygon_and_triangulation(data):
     for seg in segments:
         boundary_edges.add(tuple(sorted(seg)))
     
+    # For triangle edges, we need to convert coordinates back to indices
     triangle_edges = set()
     for triangle in triangles:
-        for i in range(3):
-            edge = tuple(sorted([triangle[i], triangle[(i+1)%3]]))
-            triangle_edges.add(edge)
-    
-    constraints_preserved = boundary_edges.issubset(triangle_edges)
-    print(f"  All boundary constraints preserved: {constraints_preserved}")
-    if not constraints_preserved:
-        missing = boundary_edges - triangle_edges
-        print(f"  Missing constraint edges: {len(missing)}")
+        # Find indices of triangle vertices in the vertices array
+        triangle_indices = []
+        for vertex_coord in triangle:
+            # Find matching vertex index
+            for i, vertex in enumerate(vertices):
+                if abs(vertex[0] - vertex_coord[0]) < 1e-6 and abs(vertex[1] - vertex_coord[1]) < 1e-6:
+                    triangle_indices.append(i)
+                    break
     
     plt.tight_layout()
     plt.show()
